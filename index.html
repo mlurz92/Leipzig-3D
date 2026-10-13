@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Leipzig 3D – realitätsgetreues Stadtmodell</title>
+    <meta
+      name="description"
+      content="Interaktives 3D-Modell der Leipziger Innenstadt aus echten Geodaten: LoD2-Gebäude, DGM1-Gelände, Baumkataster, Luftbild-Farben."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <!-- Ladeanzeige -->
+    <div id="loading">
+      <div class="loading-card">
+        <h1>Leipzig&nbsp;3D</h1>
+        <p class="sub">Realitätsgetreues Stadtmodell aus amtlichen Geodaten</p>
+        <div class="bar"><div id="loading-bar"></div></div>
+        <p id="loading-label">Daten werden geladen …</p>
+        <p class="hint">
+          LoD2-Gebäude und DGM1-Gelände: GeoSN Sachsen · Bäume: Baumkataster der Stadt Leipzig ·
+          Luftbildfarben: DOP · Straßen und Wege: Basis-DLM und OpenStreetMap
+        </p>
+      </div>
+    </div>
+
+    <!-- Kopfzeile -->
+    <header id="title">
+      <h1>Leipzig&nbsp;3D</h1>
+      <p>4&nbsp;×&nbsp;4&nbsp;km Innenstadt · 11.400 Gebäude · 53.000 Bäume · Stand 2025</p>
+    </header>
+
+    <!-- Bedienfeld -->
+    <aside id="panel">
+      <details open>
+        <summary>Tageszeit</summary>
+        <div class="row">
+          <input id="time" type="range" min="3" max="23" step="0.1" value="11" />
+          <output id="clock">11:00</output>
+        </div>
+        <div class="row buttons">
+          <button data-time="7.5">Morgen</button>
+          <button data-time="12">Mittag</button>
+          <button data-time="18.4" data-kind="golden">Sonne</button>
+          <button data-time="22.3" data-kind="night">Nacht</button>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Ansicht</summary>
+        <label class="check"><input id="toggle-trees" type="checkbox" checked /> Bäume</label>
+        <label class="check"><input id="toggle-props" type="checkbox" checked /> Mauern, Bänke, Laternen</label>
+        <label class="check"><input id="toggle-shadows" type="checkbox" checked /> Schattenwurf</label>
+        <div class="row">
+          <label for="view-distance">Sichtweite</label>
+          <input id="view-distance" type="range" min="600" max="3600" step="100" value="2600" />
+          <output id="view-distance-value">2.6 km</output>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Suchen &amp; Rundflug</summary>
+        <input id="search" type="search" placeholder="Ort suchen: Thomaskirche, Markt …" autocomplete="off" />
+        <ul id="results"></ul>
+        <div class="row buttons">
+          <button id="tour-start">Rundflug starten</button>
+          <button id="tour-stop">Stopp</button>
+        </div>
+        <p class="hint">
+          Ziehen: drehen · Rechte Maustaste oder Umschalt+Ziehen: verschieben · Rad: zoomen · Klick auf ein
+          Gebäude: Steckbrief · Leertaste: nächste Station
+        </p>
+      </details>
+    </aside>
+
+    <!-- Minimap -->
+    <div id="minimap-wrap">
+      <canvas id="minimap" width="220" height="220"></canvas>
+      <span>Leipzig-Mitte</span>
+    </div>
+
+    <!-- Steckbrief -->
+    <section id="info" hidden>
+      <header>
+        <h2 id="info-title">Gebäude</h2>
+        <button id="info-close" aria-label="schließen">×</button>
+      </header>
+      <div id="info-body"></div>
+    </section>
+
+    <div id="tour-caption"></div>
+
+    <div id="shader-error" hidden>
+      <strong>Der Grafikkartentreiber hat einen Shader abgelehnt.</strong>
+      <p>Bitte einen Screenshot dieses Textes melden – die Informationen reichen, um es zu beheben.</p>
+      <pre></pre>
+    </div>
+
+    <footer id="credits">
+      <span id="fps">–</span>
+      <span>
+        Daten: © GeoSN (dl-de/by-2-0) · © OpenStreetMap-Mitwirkende (ODbL) · Stadt Leipzig, Amt für Stadtgrün und
+        Gewässer · Mapillary (CC BY-SA)
+      </span>
+    </footer>
+
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

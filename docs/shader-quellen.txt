@@ -1,0 +1,1535 @@
+### vertex
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+varying vec2 vUv;
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main() {
+  vUv = uv;
+  vWorld = position;
+  vNormal = normal;
+  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+}
+
+
+### fragment
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+
+vec4 packDepth(float v) {
+  const vec4 shift = vec4(1.0, 255.0, 65025.0, 16581375.0);
+  const vec4 mask = vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+  vec4 r = fract(v * shift);
+  r -= r.xxyz * mask;
+  return r;
+}
+
+float unpackDepth(vec4 c) {
+  return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+
+float shadowAt(vec3 world, float ndl) {
+  vec4 lp = uShadowMatrix * vec4(world, 1.0);
+  if (lp.w <= 0.0) return 1.0;
+  vec3 c = lp.xyz / lp.w * 0.5 + 0.5;
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) return 1.0;
+  float ref = c.z - (0.0009 + 0.0032 * (1.0 - ndl));
+  float lit = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      vec2 uv = c.xy + vec2(float(i), float(j)) * uShadowTexel;
+      lit += step(ref, unpackDepth(texture2D(uShadowMap, uv)));
+    }
+  }
+  return mix(1.0, lit / 9.0, uShadowStrength);
+}
+
+/** Sonnenlicht + Himmelslicht + Bodenreflexion, dazu Schatten und Glanz. */
+vec3 shade(vec3 albedo, vec3 n, vec3 world, float gloss) {
+  float ndl = dot(n, uSunDir);
+  float up = n.y * 0.5 + 0.5;
+  vec3 ambient = albedo * mix(uBounceColor, uSkyColor, up) * uAmbient;
+  float lit = max(ndl, 0.0);
+  vec3 direct = vec3(0.0);
+  if (lit > 0.0) {
+    float sh = shadowAt(world, lit);
+    direct = albedo * uSunColor * lit * sh;
+    if (gloss > 0.0 && sh > 0.5) {
+      vec3 h = normalize(uSunDir + normalize(uEye - world));
+      direct += uSunColor * gloss * pow(max(dot(n, h), 0.0), 42.0) * lit;
+    }
+  }
+  return direct + ambient;
+}
+
+/** Dunst: mit der Entfernung zum Auge, oben duenner. */
+vec3 finish(vec3 color, vec3 world) {
+  float dist = length(world - uEye);
+  float f = 1.0 - exp(-dist * uFogDensity);
+  f *= exp(-max(world.y - uGroundRef, 0.0) * 0.0022);
+  color = mix(color, uFogColor, clamp(f, 0.0, 0.88));
+  return linearToSrgb(tonemap(color * 1.02));
+}
+
+uniform sampler2D uGround;
+varying vec2 vUv;
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main() {
+  vec3 tex = srgbToLinear(texture2D(uGround, vUv).rgb);
+  float grain = fbm(vWorld.xz * 0.9) * 0.6 + vnoise(vWorld.xz * 3.1) * 0.4;
+  vec3 albedo = tex * (0.9 + 0.2 * grain);
+  vec3 n = normalize(vNormal);
+  vec3 color = shade(albedo, n, vWorld, 0.02);
+  gl_FragColor = vec4(finish(color, vWorld), 1.0);
+}
+
+
+### vertex
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+uniform sampler2D uWater;
+uniform vec2 uAreaMin;
+uniform vec2 uAreaSize;
+varying vec2 vWorldXZ;
+varying float vLevel;
+varying float vMask;
+void main() {
+  vec2 p = position.xz;
+  vec2 wuv = (p - uAreaMin) / uAreaSize;
+  vec4 texel = texture2D(uWater, wuv);
+  float level = (texel.r * 255.0 + texel.g * 255.0 * 256.0) - 32768.0;
+  level = level / 100.0 + 100.0;              // Zentimeter ueber Origin -> Hoehe NN
+  vMask = texel.a;
+  vLevel = level;
+  vec3 world = vec3(p.x, level, p.y);
+  vec2 wxz = p;
+  // Wellen: kleine Vertikalverschiebung, wellenlaengig nach Wind
+  float wave = sin(p.x * 0.42 + uTime * 1.1) * cos(p.y * 0.37 - uTime * 0.9);
+  world.y += wave * 0.025 * step(0.35, texel.a);
+  vWorldXZ = wxz;
+  gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+  vLevel = world.y;
+}
+
+
+### fragment
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+
+vec4 packDepth(float v) {
+  const vec4 shift = vec4(1.0, 255.0, 65025.0, 16581375.0);
+  const vec4 mask = vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+  vec4 r = fract(v * shift);
+  r -= r.xxyz * mask;
+  return r;
+}
+
+float unpackDepth(vec4 c) {
+  return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+
+float shadowAt(vec3 world, float ndl) {
+  vec4 lp = uShadowMatrix * vec4(world, 1.0);
+  if (lp.w <= 0.0) return 1.0;
+  vec3 c = lp.xyz / lp.w * 0.5 + 0.5;
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) return 1.0;
+  float ref = c.z - (0.0009 + 0.0032 * (1.0 - ndl));
+  float lit = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      vec2 uv = c.xy + vec2(float(i), float(j)) * uShadowTexel;
+      lit += step(ref, unpackDepth(texture2D(uShadowMap, uv)));
+    }
+  }
+  return mix(1.0, lit / 9.0, uShadowStrength);
+}
+
+/** Sonnenlicht + Himmelslicht + Bodenreflexion, dazu Schatten und Glanz. */
+vec3 shade(vec3 albedo, vec3 n, vec3 world, float gloss) {
+  float ndl = dot(n, uSunDir);
+  float up = n.y * 0.5 + 0.5;
+  vec3 ambient = albedo * mix(uBounceColor, uSkyColor, up) * uAmbient;
+  float lit = max(ndl, 0.0);
+  vec3 direct = vec3(0.0);
+  if (lit > 0.0) {
+    float sh = shadowAt(world, lit);
+    direct = albedo * uSunColor * lit * sh;
+    if (gloss > 0.0 && sh > 0.5) {
+      vec3 h = normalize(uSunDir + normalize(uEye - world));
+      direct += uSunColor * gloss * pow(max(dot(n, h), 0.0), 42.0) * lit;
+    }
+  }
+  return direct + ambient;
+}
+
+/** Dunst: mit der Entfernung zum Auge, oben duenner. */
+vec3 finish(vec3 color, vec3 world) {
+  float dist = length(world - uEye);
+  float f = 1.0 - exp(-dist * uFogDensity);
+  f *= exp(-max(world.y - uGroundRef, 0.0) * 0.0022);
+  color = mix(color, uFogColor, clamp(f, 0.0, 0.88));
+  return linearToSrgb(tonemap(color * 1.02));
+}
+
+varying vec2 vWorldXZ;
+varying float vLevel;
+varying float vMask;
+uniform sampler2D uWater;
+void main() {
+  if (vMask < 0.45) discard;
+  vec2 p = vWorldXZ;
+  // Wellen + Glanz
+  float w1 = fbm(p * 0.55 + vec2(uTime * 0.06, -uTime * 0.04));
+  float w2 = fbm(p * 1.7 - vec2(uTime * 0.11, uTime * 0.07));
+  vec3 n = normalize(vec3((w1 - 0.5) * 0.55 + (w2 - 0.5) * 0.35, 1.0,
+                          (w2 - 0.5) * 0.5 + (w1 - 0.5) * 0.3));
+  vec3 eye = normalize(uEye - vec3(p.x, vLevel, p.y));
+  float fres = pow(1.0 - clamp(dot(n, eye), 0.0, 1.0), 2.4);
+  vec3 deep = srgbToLinear(vec3(0.10, 0.17, 0.19));
+  vec3 shallow = srgbToLinear(vec3(0.22, 0.30, 0.28));
+  vec3 body = mix(deep, shallow, 0.35 + 0.3 * fbm(p * 0.2));
+  vec3 sky = uSkyColor * 1.35 + uSunColor * 0.25;
+  vec3 color = mix(body, sky, clamp(fres * 0.85 + 0.12, 0.0, 0.9));
+  // Sonnenglanz
+  vec3 h = normalize(uSunDir + eye);
+  float spec = pow(max(dot(n, h), 0.0), 220.0);
+  color += uSunColor * spec * 2.2 * (1.0 - uNight * 0.6);
+  // Lampenspiegelungen bei Nacht
+  color += vec3(1.0, 0.72, 0.4) * uNight * 0.05 * (0.5 + 0.5 * w2);
+  float edge = smoothstep(0.45, 0.85, vMask);
+  gl_FragColor = vec4(finish(color, vec3(p.x, vLevel, p.y)), edge * 0.96);
+}
+
+
+### vertex
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+attribute vec3 color;
+varying vec3 vColor;
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main() {
+  vColor = color;
+  vWorld = position;
+  vNormal = normal;
+  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+}
+
+
+### fragment
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+
+vec4 packDepth(float v) {
+  const vec4 shift = vec4(1.0, 255.0, 65025.0, 16581375.0);
+  const vec4 mask = vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+  vec4 r = fract(v * shift);
+  r -= r.xxyz * mask;
+  return r;
+}
+
+float unpackDepth(vec4 c) {
+  return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+
+float shadowAt(vec3 world, float ndl) {
+  vec4 lp = uShadowMatrix * vec4(world, 1.0);
+  if (lp.w <= 0.0) return 1.0;
+  vec3 c = lp.xyz / lp.w * 0.5 + 0.5;
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) return 1.0;
+  float ref = c.z - (0.0009 + 0.0032 * (1.0 - ndl));
+  float lit = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      vec2 uv = c.xy + vec2(float(i), float(j)) * uShadowTexel;
+      lit += step(ref, unpackDepth(texture2D(uShadowMap, uv)));
+    }
+  }
+  return mix(1.0, lit / 9.0, uShadowStrength);
+}
+
+/** Sonnenlicht + Himmelslicht + Bodenreflexion, dazu Schatten und Glanz. */
+vec3 shade(vec3 albedo, vec3 n, vec3 world, float gloss) {
+  float ndl = dot(n, uSunDir);
+  float up = n.y * 0.5 + 0.5;
+  vec3 ambient = albedo * mix(uBounceColor, uSkyColor, up) * uAmbient;
+  float lit = max(ndl, 0.0);
+  vec3 direct = vec3(0.0);
+  if (lit > 0.0) {
+    float sh = shadowAt(world, lit);
+    direct = albedo * uSunColor * lit * sh;
+    if (gloss > 0.0 && sh > 0.5) {
+      vec3 h = normalize(uSunDir + normalize(uEye - world));
+      direct += uSunColor * gloss * pow(max(dot(n, h), 0.0), 42.0) * lit;
+    }
+  }
+  return direct + ambient;
+}
+
+/** Dunst: mit der Entfernung zum Auge, oben duenner. */
+vec3 finish(vec3 color, vec3 world) {
+  float dist = length(world - uEye);
+  float f = 1.0 - exp(-dist * uFogDensity);
+  f *= exp(-max(world.y - uGroundRef, 0.0) * 0.0022);
+  color = mix(color, uFogColor, clamp(f, 0.0, 0.88));
+  return linearToSrgb(tonemap(color * 1.02));
+}
+
+varying vec3 vColor;
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 base = srgbToLinear(vColor) * (0.92 + 0.2 * vnoise(vWorld.xz * 1.3));
+  vec3 color = shade(base, n, vWorld, 0.03);
+  gl_FragColor = vec4(finish(color, vWorld), 1.0);
+}
+
+
+### vertex
+
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mv;
+      }
+    
+
+### fragment
+
+      precision highp float;
+      varying vec3 vDir;
+      uniform vec3 uZenith, uHorizon, uSunColor, uSunDir;
+      uniform float uNight, uTime;
+      float hash12(vec2 p) {
+        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+      vec3 linearToSrgb(vec3 c) {
+        c = max(c, vec3(0.0));
+        return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+      }
+      vec3 tonemap(vec3 x) {
+        const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+        return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+      }
+      void main() {
+        vec3 d = normalize(vDir);
+        float h = clamp(d.y, -1.0, 1.0);
+        vec3 sky = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.62));
+        sky = mix(sky, uHorizon * 0.75, smoothstep(0.0, -0.25, h));
+        float sd = max(dot(d, uSunDir), 0.0);
+        sky += uSunColor * pow(sd, 1600.0) * 22.0;                 // Sonnenscheibe
+        sky += uSunColor * pow(sd, 8.0) * 0.30;                    // Hof
+        sky += uSunColor * pow(sd, 2.0) * 0.05;
+        if (uNight > 0.05) {
+          vec2 sp = vec2(atan(d.z, d.x) * 28.0, d.y * 46.0);
+          vec2 cell = floor(sp);
+          float star = pow(hash12(cell), 90.0);
+          float twinkle = 0.65 + 0.35 * sin(uTime * 2.4 + hash12(cell + 3.7) * 30.0);
+          sky += vec3(0.9, 0.94, 1.0) * star * uNight * 2.4 * twinkle * smoothstep(0.0, 0.25, h);
+        }
+        gl_FragColor = vec4(linearToSrgb(tonemap(sky)), 1.0);
+      }
+    
+
+### vertex
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+attribute vec3 color;
+attribute float flag;
+attribute vec2 baseId;     // x = Sockelhoehe (m ueber Origin), y = Gebaeudeindex
+varying vec3 vColor;
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying float vFlag;
+varying vec2 vBaseId;
+void main() {
+  vColor = color;
+  vFlag = flag;
+  vWorld = position;
+  vNormal = normal;
+  vBaseId = baseId;
+  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+}
+
+
+### fragment
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+
+vec4 packDepth(float v) {
+  const vec4 shift = vec4(1.0, 255.0, 65025.0, 16581375.0);
+  const vec4 mask = vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+  vec4 r = fract(v * shift);
+  r -= r.xxyz * mask;
+  return r;
+}
+
+float unpackDepth(vec4 c) {
+  return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+
+float shadowAt(vec3 world, float ndl) {
+  vec4 lp = uShadowMatrix * vec4(world, 1.0);
+  if (lp.w <= 0.0) return 1.0;
+  vec3 c = lp.xyz / lp.w * 0.5 + 0.5;
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) return 1.0;
+  float ref = c.z - (0.0009 + 0.0032 * (1.0 - ndl));
+  float lit = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      vec2 uv = c.xy + vec2(float(i), float(j)) * uShadowTexel;
+      lit += step(ref, unpackDepth(texture2D(uShadowMap, uv)));
+    }
+  }
+  return mix(1.0, lit / 9.0, uShadowStrength);
+}
+
+/** Sonnenlicht + Himmelslicht + Bodenreflexion, dazu Schatten und Glanz. */
+vec3 shade(vec3 albedo, vec3 n, vec3 world, float gloss) {
+  float ndl = dot(n, uSunDir);
+  float up = n.y * 0.5 + 0.5;
+  vec3 ambient = albedo * mix(uBounceColor, uSkyColor, up) * uAmbient;
+  float lit = max(ndl, 0.0);
+  vec3 direct = vec3(0.0);
+  if (lit > 0.0) {
+    float sh = shadowAt(world, lit);
+    direct = albedo * uSunColor * lit * sh;
+    if (gloss > 0.0 && sh > 0.5) {
+      vec3 h = normalize(uSunDir + normalize(uEye - world));
+      direct += uSunColor * gloss * pow(max(dot(n, h), 0.0), 42.0) * lit;
+    }
+  }
+  return direct + ambient;
+}
+
+/** Dunst: mit der Entfernung zum Auge, oben duenner. */
+vec3 finish(vec3 color, vec3 world) {
+  float dist = length(world - uEye);
+  float f = 1.0 - exp(-dist * uFogDensity);
+  f *= exp(-max(world.y - uGroundRef, 0.0) * 0.0022);
+  color = mix(color, uFogColor, clamp(f, 0.0, 0.88));
+  return linearToSrgb(tonemap(color * 1.02));
+}
+
+/** Fensterbild einer Fassade. n = Wandnormale, h = Hoehe ueber Sockel. */
+vec3 facadeWindows(vec3 base, vec3 n, vec3 world, float baseY, float id, float floorH, float pitch, out float emis) {
+  emis = 0.0;
+  float h = world.y - baseY;
+  vec2 t = normalize(vec2(-n.z, n.x));
+  float u = dot(world.xz, t);
+  float row = floor((h - 1.1) / floorH);
+  float col = floor(u / pitch);
+  float inRow = step(1.35, h - row * floorH) * step(h - row * floorH, 1.35 + floorH * 0.62);
+  float fu = abs(fract(u / pitch + 0.5) - 0.5) * pitch;
+  float fv = abs(fract((h - 1.1) / floorH + 0.35) - 0.35) * floorH;
+  float pane = step(fu, 0.62) * step(fv, 0.92) * inRow;
+  float rnd = hash12(vec2(id * 7.31, row * 13.7 + col * 5.1));
+  float on = step(0.32, rnd);                       // nur ein Teil der Fassade hat Fenster
+  float lit = step(0.55, hash12(vec2(id * 3.17, row * 29.1 + col * 11.3)));
+  float glow = smoothstep(0.55, 1.0, uNight);
+  vec3 glass = srgbToLinear(vec3(0.16, 0.19, 0.23));
+  vec3 color = mix(base, glass, pane * on * 0.92);
+  // Rahmen/Sohlbank: eine duenne helle Linie unter jeder Fensterzeile
+  float sill = step(1.1, h - row * floorH) * step(h - row * floorH, 1.22) * on;
+  color = mix(color, base * 1.12, sill * 0.7);
+  if (glow > 0.0) {
+    vec3 warm = srgbToLinear(vec3(1.0, 0.78, 0.46));
+    color = mix(color, warm * 1.6, pane * on * lit * glow * 0.85);
+    emis = pane * on * lit * glow;
+  }
+  return color;
+}
+
+varying vec3 vColor;
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying float vFlag;
+varying vec2 vBaseId;
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 base = srgbToLinear(vColor);
+  float kind = mod(vFlag, 4.0);                 // 0 Wand, 1 Dach, 2 Sockel, 3 sonst
+  float shop = mod(floor(vFlag / 4.0), 2.0);    // Ladenlokal
+  float heritage = mod(floor(vFlag / 8.0), 2.0);
+  vec3 color;
+  float gloss = 0.0;
+  if (kind < 0.5 || kind > 2.5) {
+    // Wand
+    float floorH = 3.05;
+    float pitch = 2.35;
+    float id = floor(vBaseId.y * 0.37 + 3.1);
+    float emis = 0.0;
+    if (shop > 0.5) {
+      float h = vWorld.y - vBaseId.x;
+      float glassBand = step(0.55, h) * step(h, 3.05);
+      float band = glassBand * step(0.4, fract(vWorld.x * 0.31 + vWorld.z * 0.27));
+      base = mix(base, srgbToLinear(vec3(0.28, 0.31, 0.34)), band * 0.75);
+    }
+    color = facadeWindows(base, n, vWorld, vBaseId.x, id, floorH, pitch, emis);
+    color = mix(color, color * vec3(1.04, 1.0, 0.94), heritage);
+    gloss = mix(0.04, 0.08, heritage);
+  } else if (kind < 1.5) {
+    // Dach: leicht noisige Ziegel/Abdichtung
+    float v = vnoise(vWorld.xz * 1.7) * 0.5 + fbm(vWorld.xz * 0.35) * 0.5;
+    color = srgbToLinear(vColor) * (0.88 + 0.24 * v);
+    gloss = 0.04;
+  } else {
+    // Sockel / Bodenplatte
+    color = srgbToLinear(vColor) * (0.85 + 0.3 * vnoise(vWorld.xz * 2.3));
+  }
+  vec3 shaded = shade(color, n, vWorld, gloss);
+  gl_FragColor = vec4(finish(shaded, vWorld), 1.0);
+}
+
+
+### vertex
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+attribute float aSize;
+attribute float aArt;
+attribute float aTint;
+varying vec2 vSprite;
+varying float vArt;
+varying float vTint;
+varying vec3 vWorld;
+varying float vSeed;
+void main() {
+  vec3 world = position;
+  float sway = sin(uTime * 0.9 + world.x * 0.05 + world.z * 0.04) * 0.09 * uWind * aSize * 0.12;
+  world.x += sway;
+  world.z += sway * 0.6;
+  vWorld = world;
+  vec4 mv = viewMatrix * vec4(world, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float dist = max(-mv.z, 1.0);
+  gl_PointSize = clamp(aSize * 2.0 * uPointScale / dist, 2.0, 1400.0);
+  vSprite = vec2(aTint, aArt);
+  vArt = aArt;
+  vTint = aTint;
+  vSeed = hash12(world.xz * 0.37);
+}
+
+
+### fragment
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+
+vec4 packDepth(float v) {
+  const vec4 shift = vec4(1.0, 255.0, 65025.0, 16581375.0);
+  const vec4 mask = vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+  vec4 r = fract(v * shift);
+  r -= r.xxyz * mask;
+  return r;
+}
+
+float unpackDepth(vec4 c) {
+  return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+
+float shadowAt(vec3 world, float ndl) {
+  vec4 lp = uShadowMatrix * vec4(world, 1.0);
+  if (lp.w <= 0.0) return 1.0;
+  vec3 c = lp.xyz / lp.w * 0.5 + 0.5;
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) return 1.0;
+  float ref = c.z - (0.0009 + 0.0032 * (1.0 - ndl));
+  float lit = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      vec2 uv = c.xy + vec2(float(i), float(j)) * uShadowTexel;
+      lit += step(ref, unpackDepth(texture2D(uShadowMap, uv)));
+    }
+  }
+  return mix(1.0, lit / 9.0, uShadowStrength);
+}
+
+/** Sonnenlicht + Himmelslicht + Bodenreflexion, dazu Schatten und Glanz. */
+vec3 shade(vec3 albedo, vec3 n, vec3 world, float gloss) {
+  float ndl = dot(n, uSunDir);
+  float up = n.y * 0.5 + 0.5;
+  vec3 ambient = albedo * mix(uBounceColor, uSkyColor, up) * uAmbient;
+  float lit = max(ndl, 0.0);
+  vec3 direct = vec3(0.0);
+  if (lit > 0.0) {
+    float sh = shadowAt(world, lit);
+    direct = albedo * uSunColor * lit * sh;
+    if (gloss > 0.0 && sh > 0.5) {
+      vec3 h = normalize(uSunDir + normalize(uEye - world));
+      direct += uSunColor * gloss * pow(max(dot(n, h), 0.0), 42.0) * lit;
+    }
+  }
+  return direct + ambient;
+}
+
+/** Dunst: mit der Entfernung zum Auge, oben duenner. */
+vec3 finish(vec3 color, vec3 world) {
+  float dist = length(world - uEye);
+  float f = 1.0 - exp(-dist * uFogDensity);
+  f *= exp(-max(world.y - uGroundRef, 0.0) * 0.0022);
+  color = mix(color, uFogColor, clamp(f, 0.0, 0.88));
+  return linearToSrgb(tonemap(color * 1.02));
+}
+
+varying vec2 vSprite;
+varying float vArt;
+varying float vTint;
+varying vec3 vWorld;
+varying float vSeed;
+
+vec3 crownColor() {
+  // 0 dunkelgruen, 1 mittelgruen, 2 hellgruen, 3 gelbgruen,
+  // 4 blaugruen (Nadel), 5 rotbraun, 6 silbergrau, 7 Bluete
+  int g = int(vTint + 0.5);
+  if (g == 0) return srgbToLinear(vec3(0.16, 0.28, 0.14));
+  if (g == 1) return srgbToLinear(vec3(0.24, 0.36, 0.18));
+  if (g == 2) return srgbToLinear(vec3(0.36, 0.46, 0.24));
+  if (g == 3) return srgbToLinear(vec3(0.48, 0.52, 0.22));
+  if (g == 4) return srgbToLinear(vec3(0.14, 0.26, 0.22));
+  if (g == 5) return srgbToLinear(vec3(0.42, 0.26, 0.16));
+  if (g == 6) return srgbToLinear(vec3(0.44, 0.48, 0.42));
+  return srgbToLinear(vec3(0.72, 0.55, 0.62));
+}
+
+void main() {
+  vec2 d = gl_PointCoord * 2.0 - 1.0;
+  float r = length(d);
+  float art = mod(vArt, 16.0);
+  float alpha;
+  if (art > 2.5 && art < 3.5) {
+    // Nadelbaum: dreieckige Krone
+    float tri = 1.0 - abs(d.x) * (1.0 + d.y) * 1.35;
+    alpha = step(0.0, tri) * (1.0 - smoothstep(0.55, 1.0, r));
+  } else {
+    alpha = 1.0 - smoothstep(0.62, 1.0, r);
+  }
+  if (alpha <= 0.02) discard;
+  // Blattwerk: Loecher in der Silhouette
+  float holes = fbm(d * 3.1 + vSeed * 17.0);
+  float keep = smoothstep(0.30, 0.52, holes + (1.0 - r) * 0.55);
+  if (keep < 0.35) discard;
+
+  vec3 color = crownColor() * (0.82 + 0.36 * vSeed);
+  // Kugelbeleuchtung: Normale aus der Scheibe
+  vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+  vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+  vec3 fwd = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+  float z = sqrt(max(0.0, 1.0 - r * r));
+  vec3 n = normalize(right * d.x + up * d.y + fwd * z);
+  float inner = 0.75 + 0.25 * z;                      // Rand dunkler (Tiefe)
+  vec3 shaded = shade(color * inner, n, vWorld, 0.0);
+  gl_FragColor = vec4(finish(shaded, vWorld), 1.0);
+}
+
+
+### vertex
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+varying vec3 vWorld;
+void main() {
+  vWorld = position;
+  gl_Position = uShadowMatrix * vec4(position, 1.0);
+}
+
+
+### fragment
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+
+vec4 packDepth(float v) {
+  const vec4 shift = vec4(1.0, 255.0, 65025.0, 16581375.0);
+  const vec4 mask = vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+  vec4 r = fract(v * shift);
+  r -= r.xxyz * mask;
+  return r;
+}
+
+float unpackDepth(vec4 c) {
+  return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+
+float shadowAt(vec3 world, float ndl) {
+  vec4 lp = uShadowMatrix * vec4(world, 1.0);
+  if (lp.w <= 0.0) return 1.0;
+  vec3 c = lp.xyz / lp.w * 0.5 + 0.5;
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) return 1.0;
+  float ref = c.z - (0.0009 + 0.0032 * (1.0 - ndl));
+  float lit = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      vec2 uv = c.xy + vec2(float(i), float(j)) * uShadowTexel;
+      lit += step(ref, unpackDepth(texture2D(uShadowMap, uv)));
+    }
+  }
+  return mix(1.0, lit / 9.0, uShadowStrength);
+}
+
+/** Sonnenlicht + Himmelslicht + Bodenreflexion, dazu Schatten und Glanz. */
+vec3 shade(vec3 albedo, vec3 n, vec3 world, float gloss) {
+  float ndl = dot(n, uSunDir);
+  float up = n.y * 0.5 + 0.5;
+  vec3 ambient = albedo * mix(uBounceColor, uSkyColor, up) * uAmbient;
+  float lit = max(ndl, 0.0);
+  vec3 direct = vec3(0.0);
+  if (lit > 0.0) {
+    float sh = shadowAt(world, lit);
+    direct = albedo * uSunColor * lit * sh;
+    if (gloss > 0.0 && sh > 0.5) {
+      vec3 h = normalize(uSunDir + normalize(uEye - world));
+      direct += uSunColor * gloss * pow(max(dot(n, h), 0.0), 42.0) * lit;
+    }
+  }
+  return direct + ambient;
+}
+
+/** Dunst: mit der Entfernung zum Auge, oben duenner. */
+vec3 finish(vec3 color, vec3 world) {
+  float dist = length(world - uEye);
+  float f = 1.0 - exp(-dist * uFogDensity);
+  f *= exp(-max(world.y - uGroundRef, 0.0) * 0.0022);
+  color = mix(color, uFogColor, clamp(f, 0.0, 0.88));
+  return linearToSrgb(tonemap(color * 1.02));
+}
+
+varying vec3 vWorld;
+void main() {
+  gl_FragColor = packDepth(gl_FragCoord.z);
+}
+
+
+### vertex
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+attribute float aSize;
+attribute float aArt;
+varying vec2 vSprite;
+varying float vSeed;
+void main() {
+  vec4 clip = uShadowMatrix * vec4(position, 1.0);
+  gl_Position = clip;
+  gl_PointSize = clamp(aSize * 2.0 * uPointScale / max(clip.w, 1.0), 2.0, 1400.0);
+  vSprite = vec2(aArt, 0.0);
+  vSeed = hash12(position.xz * 0.37);
+}
+
+
+### fragment
+
+precision highp float;
+
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uBounceColor;
+uniform vec3 uFogColor;
+uniform vec3 uEye;
+uniform float uFogDensity;
+uniform float uNight;
+uniform float uTime;
+uniform float uAmbient;
+uniform float uGroundRef;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+uniform float uPointScale;
+uniform float uWind;
+uniform mat4 uShadowMatrix;
+uniform sampler2D uShadowMap;
+
+const float PI = 3.14159265359;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
+vec3 srgbToLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 tonemap(vec3 x) {   // ACES-Filmnäherung (Narkowicz)
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+
+vec4 packDepth(float v) {
+  const vec4 shift = vec4(1.0, 255.0, 65025.0, 16581375.0);
+  const vec4 mask = vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+  vec4 r = fract(v * shift);
+  r -= r.xxyz * mask;
+  return r;
+}
+
+float unpackDepth(vec4 c) {
+  return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+
+float shadowAt(vec3 world, float ndl) {
+  vec4 lp = uShadowMatrix * vec4(world, 1.0);
+  if (lp.w <= 0.0) return 1.0;
+  vec3 c = lp.xyz / lp.w * 0.5 + 0.5;
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0) return 1.0;
+  float ref = c.z - (0.0009 + 0.0032 * (1.0 - ndl));
+  float lit = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      vec2 uv = c.xy + vec2(float(i), float(j)) * uShadowTexel;
+      lit += step(ref, unpackDepth(texture2D(uShadowMap, uv)));
+    }
+  }
+  return mix(1.0, lit / 9.0, uShadowStrength);
+}
+
+/** Sonnenlicht + Himmelslicht + Bodenreflexion, dazu Schatten und Glanz. */
+vec3 shade(vec3 albedo, vec3 n, vec3 world, float gloss) {
+  float ndl = dot(n, uSunDir);
+  float up = n.y * 0.5 + 0.5;
+  vec3 ambient = albedo * mix(uBounceColor, uSkyColor, up) * uAmbient;
+  float lit = max(ndl, 0.0);
+  vec3 direct = vec3(0.0);
+  if (lit > 0.0) {
+    float sh = shadowAt(world, lit);
+    direct = albedo * uSunColor * lit * sh;
+    if (gloss > 0.0 && sh > 0.5) {
+      vec3 h = normalize(uSunDir + normalize(uEye - world));
+      direct += uSunColor * gloss * pow(max(dot(n, h), 0.0), 42.0) * lit;
+    }
+  }
+  return direct + ambient;
+}
+
+/** Dunst: mit der Entfernung zum Auge, oben duenner. */
+vec3 finish(vec3 color, vec3 world) {
+  float dist = length(world - uEye);
+  float f = 1.0 - exp(-dist * uFogDensity);
+  f *= exp(-max(world.y - uGroundRef, 0.0) * 0.0022);
+  color = mix(color, uFogColor, clamp(f, 0.0, 0.88));
+  return linearToSrgb(tonemap(color * 1.02));
+}
+
+varying vec2 vSprite;
+varying float vSeed;
+void main() {
+  vec2 d = gl_PointCoord * 2.0 - 1.0;
+  float r = length(d);
+  float art = vSprite.x;
+  if (art > 2.5 && art < 3.5) {
+    if (r > 0.98) discard;
+  } else if (r > 1.0) {
+    discard;
+  }
+  float holes = fbm(d * 3.1 + vSeed * 17.0);
+  float keep = smoothstep(0.30, 0.52, holes + (1.0 - r) * 0.55);
+  if (keep < 0.35) discard;
+  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+}

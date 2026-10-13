@@ -1,0 +1,15 @@
+# Abhaengigkeiten und Bauergebnisse
+node_modules/
+dist/
+
+# Rohdaten (per pipeline/fetch_raw.py reproduzierbar, rund 91 MB)
+data/raw/
+
+# Betriebssystem und Werkzeuge
+.DS_Store
+__pycache__/
+*.pyc
+.vite/
+
+# Zwischendateien der Bake-Skripte
+/docs/plan.png
