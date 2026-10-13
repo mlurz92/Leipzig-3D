@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leipzig 3D – Hochrealistisches Stadtmodell mit Echtdaten</title>
+<meta name="description" content="Interaktives, hochdetailliertes 3D-Modell der Stadt Leipzig auf Basis echter OpenStreetMap-, Gelände- und Satellitendaten. Exakte Gebäudegrundrisse, Höhen, Fassadenfarben und Wahrzeichen.">
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏛️</text></svg>">
+</head>
+<body>
+<div id="loading">
+  <div class="load-card">
+    <div class="crest">L</div>
+    <h1>LEIPZIG <span>3D</span></h1>
+    <p id="load-status">Lade echte Gebäudedaten (OpenStreetMap) …</p>
+    <div class="bar"><i id="load-bar"></i></div>
+    <small>Quellen: © OpenStreetMap-Mitwirkende · Gelände: Mapzen/Tilezen Terrarium (SRTM/Copernicus) · Satellit: Esri World Imagery · Vektor-Karte: OpenFreeMap/OpenMapTiles</small>
+  </div>
+</div>
+
+<header>
+  <div class="brand"><div class="crest small">L</div><div><strong>LEIPZIG 3D</strong><span>Hochrealistisches Stadtmodell · Echtdaten</span></div></div>
+  <div class="search"><input id="search-input" type="search" placeholder="Adresse oder Ort in Leipzig suchen … (Enter)"><button id="search-btn">Suchen</button><div id="search-results"></div></div>
+  <div class="head-actions">
+    <button id="btn-validate" class="accent">✓ Ergebnisse kontrollieren</button>
+    <button id="btn-tour">▶ Stadtrundflug</button>
+  </div>
+</header>
+
+<aside id="panel">
+  <section>
+    <h2>Ansicht</h2>
+    <div class="btn-row">
+      <button data-basemap="karte" class="active">Stadtkarte</button>
+      <button data-basemap="satellit">Satellit (Echtbild)</button>
+      <button data-basemap="hybrid">Hybrid</button>
+    </div>
+    <label class="row"><span>3D-Gebäude (OSM-Höhen)</span><input type="checkbox" id="chk-buildings" checked></label>
+    <label class="row"><span>Gelände (Relief)</span><input type="checkbox" id="chk-terrain"></label>
+    <label class="row"><span>Wahrzeichen markieren</span><input type="checkbox" id="chk-landmarks" checked></label>
+    <label class="row"><span>Straßennamen &amp; Labels</span><input type="checkbox" id="chk-labels" checked></label>
+    <label class="row"><span>Bäume – Echtdaten (OSM)</span><input type="checkbox" id="chk-trees"></label>
+    <label>Farbmodus
+      <select id="sel-colormode">
+        <option value="fassade">Fassade (OSM-Farbe / Material-Annäherung)</option>
+        <option value="hoehe">Höhen-Farbskala</option>
+        <option value="einheitlich">Einheitlich – Sandstein/Grau</option>
+      </select>
+    </label>
+    <label>Sonnenstand <b id="sun-label">14:00 Uhr</b><input type="range" id="sun" min="6" max="20" step="0.25" value="14"></label>
+    <label>Gelände-Überhöhung <b id="terr-label">1,0×</b><input type="range" id="terr-ex" min="0" max="2" step="0.1" value="1"></label>
+    <label>Gebäude-Details ab Zoom <b id="zoom-label">14</b><input type="range" id="minzoom" min="12" max="16" step="0.5" value="14"></label>
+  </section>
+
+  <section>
+    <h2>Stadtgebiete</h2>
+    <div id="districts" class="chips"></div>
+  </section>
+
+  <section>
+    <h2>Wahrzeichen <small>(exakte WGS84-Koordinaten)</small></h2>
+    <div class="filter"><input id="landmark-filter" placeholder="Wahrzeichen filtern …"></div>
+    <div id="landmarks"></div>
+  </section>
+
+  <section>
+    <h2>Daten &amp; Genauigkeit</h2>
+    <ul class="facts">
+      <li><b>Gebäude:</b> echte Grundrisse + Höhen aus OpenStreetMap (<code>height</code>, <code>building:levels</code>, <code>roof:*</code>), Vektor-Kacheln im OpenMapTiles-Schema.</li>
+      <li><b>Fassaden:</b> OSM-Farbtag <code>building:colour</code>, wo erfasst; sonst höhen-/typbasierte Material-Annäherung (im Farbmodus erkennbar).</li>
+      <li><b>Gelände:</b> Terrarium-DEM (SRTM/Copernicus GLO-30 abgeleitet), Leipzig ist flach (ca. 110–130 m ü. NHN) – Überhöhung einstellbar.</li>
+      <li><b>Amtlich ergänzend:</b> Für LoD2-Fassadenmodelle verweist die App auf die offenen CityGML-Daten des GeoSN Sachsen (siehe README).</li>
+    </ul>
+    <button id="btn-trees-load">🌳 Bäume im Zentrum laden (Overpass)</button>
+    <div id="tree-status" class="status"></div>
+  </section>
+</aside>
+
+<button id="panel-toggle">☰ Steuerung</button>
+
+<div id="map"></div>
+
+<div id="info-card" class="hidden">
+  <button id="info-close">×</button>
+  <div id="info-content"></div>
+</div>
+
+<div id="validation" class="hidden">
+  <div class="val-head"><h2>🔍 Kontrollbericht – Echtdaten-Prüfung</h2><button id="val-close">×</button></div>
+  <div id="val-body"><p>Prüfung läuft …</p></div>
+</div>
+
+<div id="hud">
+  <span id="hud-coords">51.3397° N, 12.3731° O</span><span id="hud-zoom">Zoom 15.2</span><span id="hud-buildings">Gebäude im Bild: –</span>
+</div>
+
+<div class="attrib-note">Modell: OpenStreetMap-Echtdaten · Keine amtliche Vermessung – für amtliche LoD2-Daten siehe GeoSN Sachsen (README)</div>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="js/landmarks.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

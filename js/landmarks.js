@@ -1,0 +1,36 @@
+// Verifizierte Wahrzeichen Leipzigs – Koordinaten (WGS84) aus OpenStreetMap / Wikipedia,
+// Höhen und Baudaten aus den jeweiligen Objektartikeln. Stand: Prüfung 2026.
+window.LEIPZIG_LANDMARKS = [
+  { id:"voelkerschlachtdenkmal", name:"Völkerschlachtdenkmal", category:"Denkmal", lon:12.41330, lat:51.31242, height:91, year:"1898–1913", architect:"Bruno Schmitz", detail:"91 m hoch, 300 Stufen zur Aussichtsplattform. Eines der größten Denkmäler Europas, erinnert an die Völkerschlacht 1813.", zoom:16.5 },
+  { id:"hauptbahnhof", name:"Leipzig Hauptbahnhof", category:"Verkehr", lon:12.38172, lat:51.34542, height:18, year:"1909–1915", architect:"William Lossow & Max Hans Kühne", detail:"Größter Kopfbahnhof Europas nach Grundfläche (83.640 m²), 298 m lange Querbahnsteighalle, 26 Gleise.", zoom:16 },
+  { id:"thomaskirche", name:"Thomaskirche", category:"Kirche", lon:12.37230, lat:51.33929, height:68, year:"12.–15. Jh.", architect:"Gotik (Chor 1355, Langhaus 1482–96)", detail:"Wirkungsstätte Johann Sebastian Bachs (Thomaskantor 1723–1750), Bachs Grab in der Kirche, Thomanerchor (gegr. 1212). Turm 68 m.", zoom:17 },
+  { id:"nikolaikirche", name:"Nikolaikirche", category:"Kirche", lon:12.37856, lat:51.34031, height:75, year:"1165 / 1513–26", architect:"Spätgotik, Innenraum klassizistisch (Dauthe)", detail:"Älteste Stadtkirche Leipzigs, Ausgangspunkt der Friedensgebete und Montagsdemonstrationen 1989. Palmenkapitelle im Inneren.", zoom:17 },
+  { id:"city-hochhaus", name:"City-Hochhaus („Uniriese“)", category:"Hochhaus", lon:12.37967, lat:51.33753, height:142, year:"1968–1972", architect:"Hermann Henselmann", detail:"Mit 142,5 m (inkl. Antenne) höchstes Gebäude Leipzigs, 29 Geschosse, markante Y-förmige / Buchseiten-Silhouette am Augustusplatz.", zoom:16.5 },
+  { id:"augustusplatz", name:"Augustusplatz & Gewandhaus", category:"Platz", lon:12.38093, lat:51.33792, height:35, year:"Gewandhaus 1977–81", architect:"Rudolf Skeib u. a.", detail:"Einer der größten Stadtplätze Deutschlands. Gewandhaus (dritter Bau), Mendebrunnen (1886, 18 m), gegenüber die Oper (1960).", zoom:16.5 },
+  { id:"oper", name:"Oper Leipzig", category:"Kultur", lon:12.38136, lat:51.34028, height:34, year:"1956–1960", architect:"Kunze Nierade", detail:"Drittältestes Musiktheater Europas (gegr. 1693), einziger Opern-Neubau der DDR, 1.273 Plätze, Nordseite des Augustusplatzes.", zoom:17 },
+  { id:"neues-rathaus", name:"Neues Rathaus", category:"Verwaltung", lon:12.37230, lat:51.33634, height:115, year:"1899–1905", architect:"Hugo Licht", detail:"Auf dem Fundament der Pleißenburg errichtet, Rathausturm mit 114,7 m höchster Rathausturm Deutschlands, 600 Räume.", zoom:16.5 },
+  { id:"altes-rathaus", name:"Altes Rathaus & Markt", category:"Verwaltung", lon:12.37447, lat:51.34062, height:40, year:"1556/57", architect:"Hieronymus Lotter", detail:"Einer der bedeutendsten Renaissancebauten Deutschlands, heute Stadtgeschichtliches Museum. Marktplatz 10.000 m².", zoom:16.8 },
+  { id:"bundesverwaltungsgericht", name:"Bundesverwaltungsgericht", category:"Justiz", lon:12.36973, lat:51.33306, height:68, year:"1888–1895", architect:"Ludwig Hoffmann & Peter Dybwad", detail:"Ehemaliges Reichsgerichtsgebäude im Stil der italienischen Hochrenaissance, Kuppel 68 m, am Simsonplatz / Musikviertel.", zoom:16.5 },
+  { id:"universitaet", name:"Universität – Augusteum & Paulinum", category:"Bildung", lon:12.37861, lat:51.33848, height:48, year:"2007–2017 (Neubau)", architect:"Erick van Egeraat", detail:"Paulinum – Aula und Universitätskirche St. Pauli, erinnert an die 1968 gesprengte Universitätskirche. Uni Leipzig gegr. 1409.", zoom:16.8 },
+  { id:"wintergartenhochhaus", name:"Wintergartenhochhaus", category:"Hochhaus", lon:12.38356, lat:51.34405, height:95, year:"1970–1972", architect:"Kollektiv um Frieder Gebhardt", detail:"95,5 m, 31 Geschosse, am Georgiring gegenüber dem Hauptbahnhof, beleuchtetes „Wintergarten“-Signet / doppeltes L.", zoom:16.5 },
+  { id:"zoo", name:"Zoo Leipzig & Kongreßhalle", category:"Freizeit", lon:12.36942, lat:51.34872, height:15, year:"1878", architect:"—", detail:"Einer der ältesten und artenreichsten Zoos der Welt (ca. 850 Arten), Gondwanaland-Tropenhalle (16.500 m²).", zoom:15.5 },
+  { id:"arena", name:"Red Bull Arena", category:"Sport", lon:12.34835, lat:51.34585, height:35, year:"2000–2004", architect:"wirth+Wirth u. a.", detail:"Zentralstadion (1956) als „Stadion in der Schüssel“ neu gebaut, Kapazität ca. 47.000, Heimstätte von RB Leipzig, Sportforum / Jahnallee.", zoom:15.5 },
+  { id:"bayerischer-bahnhof", name:"Bayerischer Bahnhof", category:"Verkehr", lon:12.38195, lat:51.32909, height:20, year:"1842", architect:"Eduard Pötzsch / C. A. E. Pötzsch", detail:"Ältester erhaltener Kopfbahnhof Deutschlands, Portikus von 1842, heute Gastronomie und S-Bahn-Station (City-Tunnel).", zoom:16.8 },
+  { id:"nationalbibliothek", name:"Deutsche Nationalbibliothek", category:"Bildung", lon:12.39670, lat:51.32221, height:25, year:"1914–1916", architect:"Oskar Pusch", detail:"Standort Leipzig der DNB (gegr. 1912 als Deutsche Bücherei), Erweiterungsbau 4. Generation 2011, Deutscher Platz.", zoom:16 },
+  { id:"cospudener-see", name:"Cospudener See & Pier 1", category:"Natur", lon:12.33527, lat:51.27215, height:0, year:"geflutet 1993–2000", architect:"—", detail:"Aus Tagebau Cospuden entstandener See (436 ha) im Leipziger Neuseenland, längster Sandstrand Sachsens, Marina Pier 1.", zoom:14 },
+  { id:"Karl-Heine-Kanal", name:"Karl-Heine-Kanal & Plagwitz", category:"Natur", lon:12.33889, lat:51.33093, height:0, year:"1856–1898", architect:"Karl Heine", detail:"3,3 km langer Kanal vom Lindenauer Hafen zur Weißen Elster, Industriedenkmäler, Stelzenhaus und ehemalige Baumwollspinnerei.", zoom:15 },
+  { id:"panometer", name:"Panometer Leipzig", category:"Kultur", lon:12.38642, lat:51.31436, height:49, year:"Gasometer 1909/10", architect:"Yadegar Asisi (Panoramen seit 2003)", detail:"Ehemaliges Gasometer (49 m hoch, 57 m Durchmesser) mit 360°-Panoramen von Asisi – u. a. „Leipzig 1813“.", zoom:16.5 },
+  { id:"runde-ecke", name:"„Runde Ecke“ – Stasi-Zentrale", category:"Museum", lon:12.36985, lat:51.34176, height:22, year:"1911–1913", architect:"Weidenbach & Tschammer / Hugo Licht (Umgebung)", detail:"Ehemalige Bezirksverwaltung des Ministeriums für Staatssicherheit, heute Gedenkstätte Museum in der „Runden Ecke“, Dittrichring 24.", zoom:17 }
+];
+
+window.LEIPZIG_DISTRICTS = [
+  { name:"Zentrum / Innenstadt", lon:12.37470, lat:51.33970, zoom:15.2, pitch:62 },
+  { name:"Musikviertel & Bundesverwaltungsgericht", lon:12.36850, lat:51.33380, zoom:15.6, pitch:60 },
+  { name:"Plagwitz / Lindenau", lon:12.34000, lat:51.33150, zoom:14.8, pitch:58 },
+  { name:"Connewitz & Auwald", lon:12.37200, lat:51.30950, zoom:14.6, pitch:55 },
+  { name:"Gohlis & Zoo", lon:12.36200, lat:51.35500, zoom:14.8, pitch:58 },
+  { name:"Völkerschlachtdenkmal & Südvorstadt", lon:12.39700, lat:51.32000, zoom:14.6, pitch:58 },
+  { name:"Hauptbahnhof & Nordvorstadt", lon:12.38100, lat:51.34580, zoom:15.4, pitch:60 },
+  { name:"Cospudener See / Neuseenland", lon:12.33527, lat:51.27800, zoom:13.6, pitch:52 },
+  { name:"Gesamtstadt Leipzig", lon:12.37310, lat:51.33970, zoom:11.2, pitch:45 }
+];
