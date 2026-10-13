@@ -21,11 +21,12 @@ function buildingColorExpression(mode) {
       0, "#8ecae6", 8, "#d9c7a7", 20, "#e9c46a", 40, "#f4a261", 80, "#bc6c25", 140, "#6d597a"];
   }
   if (mode === "einheitlich") return "#cfc4ae";
-  // Fassaden-Modus: echte OSM-Farbe, wo erfasst, sonst Höhen-/Typ-Annäherung
+  // Fassaden-Modus: echte OSM-Farbe, wo erfasst. Sonst realistische Leipziger Typologie nach Höhe:
+  // niedrige Altbauten = warmer Stuck/Sandstein, mittlere = Stuck/Beton-Mischung, Hochhäuser = Glas/Beton.
   return ["case",
     ["has", "colour"], ["get", "colour"],
     ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 8],
-      0, "#b8a88e", 10, "#cbb99b", 25, "#b7a99a", 50, "#9aa3ad", 100, "#7e8a99"]];
+      0, "#cdbb96", 7, "#d6c29c", 13, "#d0bd97", 18, "#c3b498", 26, "#b3ada0", 45, "#a3adb2", 80, "#93a9b7", 140, "#87a3b5"]];
 }
 
 function addCustomLayers() {
@@ -67,6 +68,22 @@ function addCustomLayers() {
       }
     }, firstSymbol);
     buildingsReady = true;
+  }
+  // Realistische Dachschicht für ALLE Gebäude: dünne 3D-Kappe auf der Gebäudehöhe.
+  // Steildächer (niedrige Altbauten) = Ziegel/Schiefer-Töne, Flachdächer (hohe Bauten) = Grau/Bitumen.
+  if (src && !map.getLayer("leipzig-roofs")) {
+    map.addLayer({
+      id: "leipzig-roofs", type: "fill-extrusion", source: src, "source-layer": "building",
+      minzoom: parseFloat($("#minzoom").value),
+      filter: ["!=", ["get", "hide_3d"], true],
+      paint: {
+        "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 8],
+          0, "#7c4a3a", 9, "#81503f", 14, "#6f5148", 20, "#5f5a55", 35, "#7e858a", 80, "#969ea3"],
+        "fill-extrusion-height": ["+", ["coalesce", ["get", "render_height"], 8], 0.35],
+        "fill-extrusion-base": ["coalesce", ["get", "render_height"], 8],
+        "fill-extrusion-opacity": 0.98
+      }
+    }, firstSymbol);
   }
   // Wahrzeichen
   if (!map.getSource("landmarks")) {
@@ -116,7 +133,12 @@ function addCustomLayers() {
     paint: { "fill-extrusion-color": ["get","color"], "fill-extrusion-height": ["get","height"], "fill-extrusion-base": 0, "fill-extrusion-opacity": 0.9 } });
   if (!map.getLayer("detail-buildings")) map.addLayer({ id: "detail-buildings", type: "fill-extrusion", source: "detail-buildings-src", layout:{visibility:"none"},
     paint: { "fill-extrusion-color": ["get","color"], "fill-extrusion-height": ["get","height"], "fill-extrusion-base": 0,
-      "fill-extrusion-opacity": 0.96, "fill-extrusion-vertical-gradient": true } });
+      "fill-extrusion-opacity": 0.97, "fill-extrusion-vertical-gradient": true } });
+  // Dachschicht der Detail-Gebäude: echte roof:colour aus OSM, sonst aus Dachform/Material abgeleitet
+  if (!map.getLayer("detail-roofs")) map.addLayer({ id: "detail-roofs", type: "fill-extrusion", source: "detail-buildings-src", layout:{visibility:"none"},
+    paint: { "fill-extrusion-color": ["get","roofDisplayColor"],
+      "fill-extrusion-height": ["+", ["get","height"], ["get","roofCap"]], "fill-extrusion-base": ["get","height"],
+      "fill-extrusion-opacity": 0.99 } });
   if (!map.getLayer("stops-layer")) map.addLayer({ id: "stops-layer", type: "circle", source: "stops-src", layout:{visibility:"none"},
     paint: { "circle-radius": ["interpolate",["linear"],["zoom"],13,3,17,8], "circle-color": "#ffd43b", "circle-stroke-color": "#10213f", "circle-stroke-width": 2 } });
   if (!map.getLayer("stops-labels")) map.addLayer({ id: "stops-labels", type: "symbol", source: "stops-src", minzoom: 15, layout:{visibility:"none",
@@ -161,6 +183,13 @@ function applySun(hour) {
   if (map.getLayer("leipzig-buildings-3d")) {
     map.setPaintProperty("leipzig-buildings-3d", "fill-extrusion-opacity", 0.82 + day * 0.13);
   }
+  // Lichtquelle für die 3D-Schattierung der Fassaden mit der Sonne wandern lassen (falls unterstützt)
+  try {
+    const az = 90 + (hour - 6) / 14 * 180;              // grobe Sonnenbahn Ost→West
+    const alt = Math.max(8, 65 * Math.sin(Math.PI * (hour - 6) / 14)); // Sonnenhöhe
+    if (map.setLight) map.setLight({ anchor: "map", position: [1.15, az, alt],
+      color: hour < 8.5 || hour > 17.5 ? "#ffd9a8" : "#ffffff", intensity: 0.35 + day * 0.35 });
+  } catch (e) { /* ohne dynamisches Licht weiterarbeiten */ }
   try {
     map.setSky({
       "sky-color": hour < 8 || hour > 18 ? "#f4a261" : "#87b5e5",
@@ -212,12 +241,37 @@ function initMap() {
         `<br><small>Exakte Adresse &amp; Gebäudetyp: per Suche oder Wahrzeichen-Info. Höhen ohne Tag werden im Datensatz geschätzt.</small>`)
       .addTo(map);
   });
+  map.on("click", "detail-buildings", (e) => {
+    const p = e.features[0].properties || {};
+    const addr = [p.street && (p.street + " " + (p.housenumber || "")), p.postcode && (p.postcode + " Leipzig")].filter(Boolean).join(", ");
+    const sw = c => `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${escapeHtml(c || "#ccc")};border:1px solid rgba(255,255,255,.4);vertical-align:-2px"></span>`;
+    new maplibregl.Popup({ maxWidth: "360px" }).setLngLat(e.lngLat)
+      .setHTML(`<b>${escapeHtml(p.name || "Gebäude (Detail-Rohdaten)")}</b><br>
+      Höhe: ${(+p.height).toFixed(1)} m ${p.levels ? `(${escapeHtml(p.levels)} Geschosse)` : ""}<br>
+      ${addr ? "Adresse: " + escapeHtml(addr) + "<br>" : ""}
+      ${p.buildingType ? "Typ: " + escapeHtml(p.buildingType) + "<br>" : ""}
+      ${sw(p.baseColor)} Fassade ${escapeHtml(p.baseColor || "")} – ${escapeHtml(p.facadeSource || "abgeleitet")}<br>
+      ${p.material ? "Material (OSM): " + escapeHtml(p.material) + "<br>" : ""}${p.startDate ? "Bauzeit (OSM): " + escapeHtml(p.startDate) + "<br>" : ""}
+      ${sw(p.roofDisplayColor)} Dach ${escapeHtml(p.roofDisplayColor || "")} – ${escapeHtml(p.roofSource || "")}${p.roofShape ? " · Form: " + escapeHtml(p.roofShape) : ""}<br>
+      <small>Quelle: OpenStreetMap ${escapeHtml(p.osm || "")} (Rohdaten, Overpass). „Abgeleitet“ = Farbe aus Material/Typ/Bauzeit/Höhe rekonstruiert, keine Messung.</small>`)
+      .addTo(map);
+  });
+  ["pois-layer", "stops-layer"].forEach(layer => map.on("click", layer, (e) => {
+    const p = e.features[0].properties || {};
+    new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<b>${escapeHtml(p.name || "")}</b><br>${escapeHtml(p.group || p.kind || "Haltestelle / POI")}<br><small>Quelle: OpenStreetMap (Overpass)</small>`).addTo(map);
+  }));
+  map.on("mousemove", (e) => {
+    $("#hud-coords").textContent = `${e.lngLat.lat.toFixed(4)}° N, ${e.lngLat.lng.toFixed(4)}° O`;
+    if ($("#chk-terrain").checked && map.queryTerrainElevation) {
+      try { const el = map.queryTerrainElevation(e.lngLat); if (el != null) $("#hud-elev").textContent = "Geländehöhe: " + el.toFixed(0) + " m ü. NN (Cursor)"; } catch(err){}
+    }
+  });
   map.on("click", "landmark-circles", (e) => {
     const id = e.features[0].properties.id;
     const l = window.LEIPZIG_LANDMARKS.find(x => x.id === id);
     if (l) showLandmark(l, false);
   });
-  ["leipzig-buildings-3d", "landmark-circles"].forEach(l => {
+  ["leipzig-buildings-3d", "landmark-circles", "detail-buildings", "pois-layer", "stops-layer"].forEach(l => {
     map.on("mouseenter", l, () => map.getCanvas().style.cursor = "pointer");
     map.on("mouseleave", l, () => map.getCanvas().style.cursor = "");
   });
@@ -361,17 +415,118 @@ function stitchRings(ways) {
   }
   return rings;
 }
+/* ---------- Realistische Fassadenfarben ---------- */
+const NAMED_COLORS = { white:"#ece7dc", black:"#3a3a3c", red:"#9c4a38", darkred:"#7c3a30", brown:"#7d5a43",
+  beige:"#d3bf9d", yellow:"#d9bf7e", orange:"#c07f4a", grey:"#a3a3a0", gray:"#a3a3a0", darkgrey:"#767672",
+  lightgrey:"#c2c2bd", lightgray:"#c2c2bd", blue:"#7d9db5", green:"#7d9b7a", cream:"#e3d5b3", sand:"#cdb287",
+  brick:"#94543f", sandstone:"#c8ad7d", plaster:"#d8c49c", concrete:"#acaea8", glass:"#87a7ba" };
+function hexToRgb(h){ h = h.replace("#",""); if (h.length===3) h = h.split("").map(c=>c+c).join(""); const n=parseInt(h,16); return [n>>16&255, n>>8&255, n&255]; }
+function rgbToHex(r,g,b){ return "#" + [r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join(""); }
+function normalizeColor(c){
+  if (!c) return "";
+  c = String(c).trim().toLowerCase().replace(/_/g," ");
+  if (/^#[0-9a-f]{3,8}$/.test(c)) return c.slice(0,7);
+  if (NAMED_COLORS[c]) return NAMED_COLORS[c];
+  const key = Object.keys(NAMED_COLORS).find(k => c.includes(k));
+  return key ? NAMED_COLORS[key] : "";
+}
+function mixColor(hex, other, t){ const a=hexToRgb(hex), b=hexToRgb(other); return rgbToHex(a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t); }
+function shadeColor(hex, f){ const [r,g,b]=hexToRgb(hex); return rgbToHex(r*f, g*f, b*f); }
+function hashNum(s){ let h=0; const str=String(s); for (let i=0;i<str.length;i++) h=(h*31 + str.charCodeAt(i))>>>0; return h; }
+function pickByHash(palette, seed){ return palette[hashNum(seed) % palette.length]; }
+function varyColor(hex, seed, amt=0.07){ const f = 1 - amt + (hashNum(seed+"v") % 100)/100 * amt * 2; return shadeColor(hex, f); }
+let facadeWeathering = 0.25;
+function applyWeathering(hex, seed){
+  // Verwitterung: leicht entsättigen (Richtung warmes Grau-Braun) + minimal abdunkeln, je Gebäude deterministisch
+  const strength = facadeWeathering * (0.7 + (hashNum(seed+"w") % 60)/100);
+  return shadeColor(mixColor(hex, "#8d8578", strength*0.55), 1 - strength*0.08);
+}
+function parseYear(tags){
+  const raw = tags.start_date || tags["building:start_date"] || tags.year_of_construction || tags.construction_date || tags.built || "";
+  const m = String(raw).match(/(1[5-9]\d\d|20[0-2]\d)/);
+  return m ? parseInt(m[1]) : null;
+}
+/* Fassadenfarbe ableiten – Priorität: echte OSM-Farbe > Material > Typ+Bauzeit > Typologie nach Geschossen.
+   Rückgabe inkl. Herkunft, damit die App ehrlich zeigt, woher jede Farbe stammt. */
+function deriveFacade(tags, seed){
+  const real = normalizeColor(tags["building:colour"] || tags["building:color"] || tags.colour || tags.color);
+  if (real) return { color: real, source: "Echt: OSM building:colour" };
+  const material = String(tags["building:material"] || tags["facade:material"] || tags.material || "").toLowerCase();
+  const matPalettes = {
+    brick:["#94543f","#8a4c38","#a05a43","#7e4634"], sandstone:["#c8ad7d","#bfa36f","#d0b586"],
+    stone:["#a89c87","#9d927e","#b0a48d"], limestone:["#cfc0a0"], marble:["#e6e1d5"],
+    plaster:["#d8c49c","#e0cfa8","#cbb489","#dcc7a0"], render:["#d8c49c","#e0cfa8","#cbb489"],
+    concrete:["#acaea8","#b5b3aa","#a3a49e"], glass:["#87a7ba","#7d9fb8","#93aeba"],
+    metal:["#8b96a0","#7e8a94"], steel:["#7e8a94","#93a0aa"], wood:["#8a6844","#7d5f3e","#96714a"],
+    brickwork:["#94543f","#8a4c38"]
+  };
+  const matKey = Object.keys(matPalettes).find(k => material.includes(k));
+  if (matKey) return { color: pickByHash(matPalettes[matKey], seed), source: "Material: " + material + " (OSM)" };
+  const type = String(tags.building || "yes").toLowerCase();
+  const year = parseYear(tags);
+  const levels = parseFloat(tags["building:levels"]) || null;
+  let palette, why;
+  if (["church","chapel","cathedral","monastery"].includes(type)) { palette = matPalettes.sandstone.concat(matPalettes.stone); why = "Kirche: Sand-/Naturstein"; }
+  else if (["train_station","station"].includes(type)) { palette = ["#c2a878","#bfa36f","#a89c87"]; why = "Bahnhof: Sandstein"; }
+  else if (["industrial","warehouse","manufacture","factory","hall"].includes(type)) { palette = matPalettes.brick.concat(["#8f8578","#7e8a94"]); why = "Industrie: Backstein/Stahl"; }
+  else if (["garage","garages","parking"].includes(type)) { palette = matPalettes.concrete; why = "Beton"; }
+  else if (year && year < 1919) { palette = ["#d8c49c","#e0cfa8","#cbb489","#c9a87c","#d9bda0","#cdb287"]; why = "Bauzeit vor 1919: Stuck/Sandstein (Gründerzeit)"; }
+  else if (year && year < 1949) { palette = ["#c9b28c","#b99f78","#a98f6d","#c2a186"].concat(matPalettes.brick); why = "Bauzeit 1919–1945: Putz/Backstein"; }
+  else if (year && year < 1991) { palette = ["#b9b6aa","#c0beb2","#acaaa0","#c9d2c0","#d8c9a3","#bfcbd3"]; why = "Bauzeit 1949–1990: Beton/Platte, teils saniert pastell"; }
+  else if (year) { palette = ["#b9bec2","#9fb4c0","#c7c2b8","#87a7ba","#a8aeb2"]; why = "Bauzeit ab 1991: modern Beton/Glas"; }
+  else if (["office","commercial","retail","supermarket"].includes(type)) { palette = ["#aeb6ba","#c0beb2","#9fb4c0","#c7c2b8"]; why = "Büro/Handel: Beton/Glas-Annahme"; }
+  else if (["school","university","hospital","kindergarten","civic","public"].includes(type)) { palette = ["#c9b28c","#d8c49c"].concat(matPalettes.brick); why = "Öffentlich: Putz/Backstein-Annahme"; }
+  else if (["house","detached","semidetached_house","terrace","bungalow"].includes(type)) { palette = ["#e0cfa8","#d8c49c","#cdbb96","#c9b8a6","#d3c5ae"]; why = "Wohnhaus: warmer Putz"; }
+  else if (levels && levels >= 7) { palette = ["#b9b6aa","#bfcbd3","#c9d2c0","#d8c9a3","#aebac2"]; why = "Hochhaus/Großwohnbau: Platte/Beton, saniert pastell"; }
+  else if (levels && levels <= 2) { palette = ["#e0cfa8","#d8c49c","#cdbb96","#d3c5ae"]; why = "Niedriges Wohnhaus: Putz-Annahme"; }
+  else { palette = ["#d8c49c","#e0cfa8","#cbb489","#cdbb96","#bfac8a"]; why = "Leipziger Altbau-Typologie: Stuck (3–5 Geschosse)"; }
+  return { color: pickByHash(palette, seed), source: "Abgeleitet: " + why };
+}
+function deriveRoof(tags, seed, facade){
+  const real = normalizeColor(tags["roof:colour"] || tags["roof:color"]);
+  if (real) return { color: real, cap: 0.35, source: "Echt: OSM roof:colour" };
+  const mat = String(tags["roof:material"] || "").toLowerCase();
+  if (mat.includes("slate")) return { color: "#4e565e", cap: 0.4, source: "Dachmaterial Schiefer (OSM)" };
+  if (mat.includes("tile") || mat.includes("roof_tiles")) return { color: pickByHash(["#8a4f3d","#7a463a","#93543f"], seed), cap: 0.45, source: "Dachmaterial Ziegel (OSM)" };
+  if (mat.includes("copper")) return { color: "#4f7d6a", cap: 0.4, source: "Dachmaterial Kupfer/Patina (OSM)" };
+  if (mat.includes("grass") || mat.includes("green")) return { color: "#6d8f5f", cap: 0.3, source: "Gründach (OSM)" };
+  const shape = String(tags["roof:shape"] || "").toLowerCase();
+  if (shape === "flat") return { color: pickByHash(["#777c80","#83888c","#6f7478"], seed), cap: 0.22, source: "Flachdach: Bitumen/Grau (aus roof:shape)" };
+  if (shape === "dome" || shape === "onion") return { color: "#4f7d6a", cap: 1.4, source: "Kuppel: Kupferpatina-Annahme" };
+  if (shape === "pyramidal" || shape === "cone") return { color: pickByHash(["#4e565e","#7a463a"], seed), cap: 1.1, source: "Spitzdach-Annahme" };
+  if (["gabled","hipped","half-hipped","gambrel","mansard","saltbox","skillion","pitched"].includes(shape))
+    return { color: pickByHash(["#8a4f3d","#74443a","#4e565e","#6b4a3a"], seed), cap: 0.55, source: "Steildach: Ziegel/Schiefer-Annahme (aus roof:shape)" };
+  // Ohne Dachangabe: niedrige Häuser eher Steildach, hohe/Großbauten eher Flachdach
+  const h = parseHeight(tags), lv = parseFloat(tags["building:levels"]) || 0;
+  return (h <= 16 && lv < 6) ? { color: pickByHash(["#8a4f3d","#74443a","#4e565e"], seed), cap: 0.5, source: "Steildach-Annahme (Gebäudehöhe)" }
+                 : { color: pickByHash(["#777c80","#83888c"], seed), cap: 0.22, source: "Flachdach-Annahme (Gebäudehöhe/Geschosse)" };
+}
+let detailFeatures = [];
+function recolorDetailBuildings(){
+  if (!detailFeatures.length || !map.getSource("detail-buildings-src")) return;
+  detailFeatures.forEach(f => {
+    f.properties.color = applyWeathering(f.properties.baseColor, f.properties.osm);
+  });
+  map.getSource("detail-buildings-src").setData({ type: "FeatureCollection", features: detailFeatures });
+}
+
 async function loadDetailBuildings() {
   const q = `[out:json][timeout:120];(way["building"](${CENTER_BBOX});relation["building"]["type"="multipolygon"](${CENTER_BBOX}););out geom tags;`;
   const els = await overpass(q, "Detail-Gebäude");
   const feats = [];
   els.forEach(el => {
     const t = el.tags || {};
-    const props = { name: t.name || "", height: parseHeight(t), color: t["building:colour"] || t["colour"] || "",
+    const seed = el.type + "/" + el.id;
+    const facade = deriveFacade(t, seed);
+    const roof = deriveRoof(t, seed, facade);
+    const baseColor = varyColor(facade.color, seed);
+    const props = { name: t.name || "", height: parseHeight(t),
+      baseColor, color: applyWeathering(baseColor, seed), facadeSource: facade.source,
+      roofDisplayColor: roof.color, roofCap: roof.cap, roofSource: roof.source,
       roofColor: t["roof:colour"] || "", roofShape: t["roof:shape"] || "", levels: t["building:levels"] || "",
+      material: t["building:material"] || t.material || "", startDate: t.start_date || t.year_of_construction || "",
       buildingType: t.building || "", street: t["addr:street"] || "", housenumber: t["addr:housenumber"] || "",
-      postcode: t["addr:postcode"] || "", city: t["addr:city"] || "", osm: el.type + "/" + el.id };
-    if (!props.color) props.color = ["#cbb99b", "#b8a88e", "#b7a99a", "#a8b0b8", "#c2b49a"][Math.abs(el.id) % 5];
+      postcode: t["addr:postcode"] || "", city: t["addr:city"] || "", osm: seed };
     if (el.type === "way" && el.geometry && el.geometry.length > 3) {
       const ring = el.geometry.map(g => [g.lon, g.lat]);
       if (ring[0].join() !== ring[ring.length - 1].join()) ring.push(ring[0]);
@@ -384,7 +539,9 @@ async function loadDetailBuildings() {
       });
     }
   });
+  detailFeatures = feats;
   map.getSource("detail-buildings-src").setData({ type: "FeatureCollection", features: feats });
+  if ($("#chk-roofs").checked) layerVis(["detail-roofs"], true);
   return feats.length;
 }
 async function loadTransportAndMore() {
@@ -539,8 +696,8 @@ async function runValidation() {
     sample.map(l => `${l.name}: ${l.lat.toFixed(5)}, ${l.lon.toFixed(5)}`).join("<br>")]);
   rows.push(["Höhenplausibilität", "City-Hochhaus 142 m · Völkerschlachtdenkmal 91 m · Neues Rathaus 115 m", "ok",
     "Gegen Objektangaben (Wikipedia/OSM height-Tag) abgeglichen; Gebäude ohne height-Tag erhalten im OSM-Datensatz eine Schätzhöhe (render_height) – im Farbmodus „Höhe“ erkennbar."]);
-  rows.push(["Fassaden-Grenze (ehrlich)", "Teilweise Annäherung", "warn",
-    "Echte Fassadenfarben nur, wo building:colour in OSM erfasst ist. Für flächendeckende amtliche Fassaden/LoD2: GeoSN Sachsen CityGML (kostenlos, siehe README) – zu groß für Direkt-Streaming im Browser."]);
+  rows.push(["Fassaden-Grenze (ehrlich)", "Rekonstruktion statt Foto", "warn",
+    "Priorität: 1) echte OSM-Farbe (building:colour), 2) OSM-Material, 3) Gebäudetyp + Bauzeit, 4) Leipziger Typologie (Geschosse/Höhe). Jede Farbe zeigt ihre Herkunft im Detail-Klick. Dächer analog aus roof:colour/material/shape. Eine fotografische Textur jeder Fassade gibt es als freien Datensatz nicht – das Modell rekonstruiert farblich plausibel und kennzeichnet das."]);
   rows.push(["Alle integrierten Quellen", allDataLoaded ? "Detaildaten geladen" : "Basisdaten aktiv, Detaildaten per Button ladbar", allDataLoaded ? "ok" : "warn",
     "Basis: OSM-Vektor, Esri-Satellit, GeoSN-DOP (WMS), Terrarium-Gelände. Detail (Overpass): Gebäude-Rohdaten mit Dach/Fassade/Adresse, Bäume (3D-Kronen), Bahn/Tram, ÖPNV, Radwege, POIs, Stadtteilgrenzen, Gewässer. Echtzeit: Open-Meteo Wetter/Luft (CAMS), Pegelonline, Sonnenstand. Suche: Nominatim. Status je Quelle im Datenkatalog (linkes Panel)."]);
   body.innerHTML = `<p>Geprüft am ${new Date().toLocaleString("de-DE")} · Bildausschnitt-Zentrum: ${map.getCenter().lat.toFixed(4)}° N, ${map.getCenter().lng.toFixed(4)}° O · Zoom ${map.getZoom().toFixed(1)}</p>
@@ -587,7 +744,14 @@ document.querySelectorAll("[data-basemap]").forEach(b => b.onclick = () => {
   document.querySelectorAll("[data-basemap]").forEach(x => x.classList.remove("active"));
   b.classList.add("active"); applyBasemap(b.dataset.basemap);
 });
-$("#chk-buildings").onchange = e => map.setLayoutProperty("leipzig-buildings-3d", "visibility", e.target.checked ? "visible" : "none");
+$("#chk-buildings").onchange = e => { map.setLayoutProperty("leipzig-buildings-3d", "visibility", e.target.checked ? "visible" : "none");
+  if (map.getLayer("leipzig-roofs")) map.setLayoutProperty("leipzig-roofs", "visibility", (e.target.checked && $("#chk-roofs").checked) ? "visible" : "none"); };
+$("#chk-roofs").onchange = e => { layerVis(["leipzig-roofs"], e.target.checked && $("#chk-buildings").checked); layerVis(["detail-roofs"], e.target.checked && $("#chk-detail-buildings").checked); };
+$("#facade-weathering").oninput = e => {
+  facadeWeathering = parseInt(e.target.value) / 100;
+  $("#weathering-label").textContent = e.target.value + " %";
+  recolorDetailBuildings();
+};
 $("#chk-landmarks").onchange = e => { ["landmark-circles","landmark-labels"].forEach(l => map.setLayoutProperty(l, "visibility", e.target.checked ? "visible" : "none")); };
 $("#chk-labels").onchange = () => applyBasemap(document.querySelector("[data-basemap].active").dataset.basemap);
 $("#chk-trees").onchange = e => { if (e.target.checked && !treesLoaded) loadTrees(); else { map.setLayoutProperty("trees-layer", "visibility", e.target.checked ? "visible" : "none"); layerVis(["tree-crowns"], e.target.checked); } };
@@ -598,7 +762,7 @@ $("#chk-terrain").onchange = e => {
 $("#terr-ex").oninput = e => { $("#terr-label").textContent = (+e.target.value).toFixed(1).replace(".", ",") + "×"; if ($("#chk-terrain").checked) map.setTerrain({ source: "terrain-dem", exaggeration: parseFloat(e.target.value) }); };
 $("#sel-colormode").onchange = e => map.setPaintProperty("leipzig-buildings-3d", "fill-extrusion-color", buildingColorExpression(e.target.value));
 $("#sun").oninput = e => applySun(parseFloat(e.target.value));
-$("#minzoom").oninput = e => { $("#zoom-label").textContent = e.target.value; if (map.getLayer("leipzig-buildings-3d")) map.setLayerZoomRange("leipzig-buildings-3d", parseFloat(e.target.value), 24); };
+$("#minzoom").oninput = e => { $("#zoom-label").textContent = e.target.value; ["leipzig-buildings-3d","leipzig-roofs"].forEach(l => { if (map.getLayer(l)) map.setLayerZoomRange(l, parseFloat(e.target.value), 24); }); };
 $("#landmark-filter").oninput = e => buildLandmarkList(e.target.value);
 $("#btn-trees-load").onclick = loadTrees;
 $("#btn-load-all").onclick = loadAllData;
@@ -609,7 +773,7 @@ $("#btn-livesun").onclick = () => {
   $("#sun").value = h; applySun(h);
   $("#realtime-status").textContent = "Sonnenstand auf aktuelle Leipziger Zeit gesetzt (" + $("#sun-label").textContent + ").";
 };
-const toggleMap = { "chk-detail-buildings": ["detail-buildings"], "chk-rail": ["rail-layer"], "chk-stops": ["stops-layer", "stops-labels"],
+const toggleMap = { "chk-detail-buildings": ["detail-buildings", "detail-roofs"], "chk-rail": ["rail-layer"], "chk-stops": ["stops-layer", "stops-labels"],
   "chk-cycleways": ["cycle-layer"], "chk-pois": ["pois-layer", "pois-labels"], "chk-boundaries": ["bounds-layer", "bounds-labels"], "chk-water": ["water-layer"] };
 Object.entries(toggleMap).forEach(([id, layers]) => {
   const el = document.getElementById(id); if (!el) return;

@@ -18,7 +18,8 @@ python3 -m http.server 5173
 |---|---|---|
 | Gebäude-Standorte & Grundrisse | OpenStreetMap, als Vektor-Kacheln (OpenMapTiles-Schema via OpenFreeMap) | Lagegenau wie in OSM erfasst (typisch < 1–5 m in der Innenstadt) |
 | Gebäudehöhen | OSM `height` / `building:levels` → `render_height` der Kacheln | Echt, wo getaggt; sonst Schätzwert des Datensatzes (in der App gekennzeichnet) |
-| Fassadenfarben | OSM `building:colour`, wo erfasst | Sonst höhen-/typbasierte Material-Annäherung — im Farbmodus umschaltbar und im Kontrollbericht offengelegt |
+| Fassadenfarben | Prioritäten-Kette in `deriveFacade()`: 1) OSM `building:colour` (normalisiert), 2) OSM `building:material` (Backstein/Sandstein/Putz/Beton/Glas …), 3) Gebäudetyp + Bauzeit (`start_date`: Gründerzeit-Stuck, Plattenbau-Pastell …), 4) Leipziger Typologie nach Geschossen/Höhe | Jede Farbe inkl. Herkunft im Detail-Klick; pro Gebäude deterministische Helligkeitsvariation + einstellbare Verwitterung (0–80 %) |
+| Dachfarben | Eigene 3D-Dachschicht für alle Gebäude; im Detail zusätzlich `roof:colour`/`roof:material`/`roof:shape` (Ziegel, Schiefer, Kupferpatina, Flachdach-Bitumen, Gründach) | Echt, wo getaggt; sonst aus Dachform/Höhe abgeleitet (Herkunft im Klick) |
 | Gelände | AWS Terrain Tiles (Terrarium-DEM, aus SRTM/Copernicus abgeleitet) | Leipzig ist flach (~110–130 m ü. NHN); Überhöhung einstellbar |
 | Oberflächen (Satellit) | Esri World Imagery (Echtbild-Luftbilder) | Umschaltbar: Stadtkarte / Satellit / Hybrid |
 | Straßen, Gewässer (Pleiße, Weiße Elster, Karl-Heine-Kanal …), Parks | OSM (Basis-Layer des Kartenstils) | Täglich aktualisierte Community-Daten |

@@ -47,11 +47,22 @@
     <label class="row"><span>Bäume 3D – Echtdaten (OSM)</span><input type="checkbox" id="chk-trees"></label>
     <label>Farbmodus
       <select id="sel-colormode">
-        <option value="fassade">Fassade (OSM-Farbe / Material-Annäherung)</option>
+        <option value="fassade">Fassaden realistisch (Material · Typ · Bauzeit)</option>
         <option value="hoehe">Höhen-Farbskala</option>
         <option value="einheitlich">Einheitlich – Sandstein/Grau</option>
       </select>
     </label>
+    <label class="row"><span>Realistische Dachfarben (3D-Dachschicht)</span><input type="checkbox" id="chk-roofs" checked></label>
+    <label>Fassaden-Alterung / Verwitterung <b id="weathering-label">25 %</b><input type="range" id="facade-weathering" min="0" max="80" step="5" value="25"></label>
+    <div id="facade-legend" class="facade-legend">
+      <div><i style="background:#d8c49c"></i>Stuck/Sandstein (Gründerzeit)</div>
+      <div><i style="background:#94543f"></i>Backstein (Industrie/Altbau)</div>
+      <div><i style="background:#b9b6aa"></i>Beton/Platte (Nachkrieg/DDR)</div>
+      <div><i style="background:#87a7ba"></i>Glas/Stahl (modern)</div>
+      <div><i style="background:#7a4a3c"></i>Dach: Ziegel/Schiefer</div>
+      <div><i style="background:#7c8287"></i>Dach: Flachdach/Bitumen</div>
+      <small>Echte Farbe aus OSM, wo erfasst – sonst aus Material, Typ, Bauzeit &amp; Höhe abgeleitet. Herkunft steht im Gebäude-Klick.</small>
+    </div>
     <label>Sonnenstand <b id="sun-label">14:00 Uhr</b><input type="range" id="sun" min="6" max="20" step="0.25" value="14"></label>
     <label>Gelände-Überhöhung <b id="terr-label">1,0×</b><input type="range" id="terr-ex" min="0" max="2" step="0.1" value="1"></label>
     <label>Gebäude-Details ab Zoom <b id="zoom-label">14</b><input type="range" id="minzoom" min="12" max="16" step="0.5" value="14"></label>
