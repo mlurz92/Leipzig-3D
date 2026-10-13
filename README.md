@@ -26,6 +26,10 @@ python3 -m http.server 5173
 | Einzelbäume | OSM `natural=tree`, live per Overpass API | Nur einzeln erfasste Bäume (Button im Panel) |
 | Wahrzeichen (38) | Handverifizierte WGS84-Koordinaten, Höhen & Baudaten (`js/landmarks.js`) | Gegen OSM-Objekte und Objektartikel abgeglichen |
 | Suche | Nominatim (OSM), auf Leipzigs Bounding Box begrenzt | Adressgenau wie OSM |
+| Gebäudeteile | OSM `building:part` + `min_height` (Simple 3D Buildings) via Overpass | Türme/Anbauten/Hallen mit eigener Höhe & Fassade |
+| Fassadenfotos | Wikimedia Commons API (Wahrzeichen-Info) | Echte Fotos mit Autor/Lizenz zur Farb-Kontrolle |
+| Amtl. LoD2 Leipzig | Open Data Leipzig, CKAN-API live + CityGML/Shape/DXF-Downloads (dl-de/by-2-0) | 154.000 Gebäude, Download ohne Texturen; LoD3-Texturen nur im Stadt-Viewer |
+| Weitere Quellen | Overture Maps (facade_color/material nativ), EUBUCCO (Baujahr/Höhe/Typ), Microsoft Footprints, GHSL/Urban Atlas, GeoSN DOM1/ALKIS, Mapillary, CC0-Texturen | Bewertung & Offline-Pipeline: siehe **QUELLEN.md**, DuckDB-Abfrage: `scripts/overture_leipzig.sql` |
 | Amtl. Luftbild | GeoSN Sachsen, WMS DOP-RGB (dl-de/by-2-0) | Amtliches Orthofoto, in Sachsen i. d. R. 20-cm-Bodenauflösung |
 | Detail-Gebäude Zentrum | OSM-Rohdaten live via Overpass (`out geom`): Grundriss, `height`/`levels`, `building:colour`, `roof:shape/colour`, Adresse | Rohdaten-genau; Relations-Multipolygone werden im Browser zusammengesetzt |
 | Bahn/Tram, ÖPNV, Radwege, POIs, Stadtteilgrenzen, Gewässer-Verläufe | OSM-Rohdaten live via Overpass | Wie in OSM erfasst; Grenzen als Linien + Schwerpunkt-Labels |

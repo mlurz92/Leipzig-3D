@@ -134,6 +134,10 @@ function addCustomLayers() {
   if (!map.getLayer("detail-buildings")) map.addLayer({ id: "detail-buildings", type: "fill-extrusion", source: "detail-buildings-src", layout:{visibility:"none"},
     paint: { "fill-extrusion-color": ["get","color"], "fill-extrusion-height": ["get","height"], "fill-extrusion-base": 0,
       "fill-extrusion-opacity": 0.97, "fill-extrusion-vertical-gradient": true } });
+  // Gebäudeteile nach Simple-3D-Buildings-Schema: Türme, Anbauten, Hallen mit eigener Höhe/Fassade
+  if (!map.getLayer("building-parts")) map.addLayer({ id: "building-parts", type: "fill-extrusion", source: "building-parts-src", layout:{visibility:"none"},
+    paint: { "fill-extrusion-color": ["get","color"], "fill-extrusion-height": ["get","height"], "fill-extrusion-base": ["get","minHeight"],
+      "fill-extrusion-opacity": 0.98, "fill-extrusion-vertical-gradient": true } });
   // Dachschicht der Detail-Gebäude: echte roof:colour aus OSM, sonst aus Dachform/Material abgeleitet
   if (!map.getLayer("detail-roofs")) map.addLayer({ id: "detail-roofs", type: "fill-extrusion", source: "detail-buildings-src", layout:{visibility:"none"},
     paint: { "fill-extrusion-color": ["get","roofDisplayColor"],
@@ -252,6 +256,8 @@ function initMap() {
       ${p.buildingType ? "Typ: " + escapeHtml(p.buildingType) + "<br>" : ""}
       ${sw(p.baseColor)} Fassade ${escapeHtml(p.baseColor || "")} – ${escapeHtml(p.facadeSource || "abgeleitet")}<br>
       ${p.material ? "Material (OSM): " + escapeHtml(p.material) + "<br>" : ""}${p.startDate ? "Bauzeit (OSM): " + escapeHtml(p.startDate) + "<br>" : ""}
+      ${p.architecture ? "Architektur (OSM): " + escapeHtml(p.architecture) + "<br>" : ""}${p.heritage ? escapeHtml(p.heritage) + "<br>" : ""}
+      ${p.wikipedia ? "Wikipedia (OSM-Tag): " + escapeHtml(p.wikipedia) + "<br>" : ""}${p.commons ? "Bild (OSM-Tag): " + escapeHtml(String(p.commons).slice(0, 90)) + "<br>" : ""}
       ${sw(p.roofDisplayColor)} Dach ${escapeHtml(p.roofDisplayColor || "")} – ${escapeHtml(p.roofSource || "")}${p.roofShape ? " · Form: " + escapeHtml(p.roofShape) : ""}<br>
       <small>Quelle: OpenStreetMap ${escapeHtml(p.osm || "")} (Rohdaten, Overpass). „Abgeleitet“ = Farbe aus Material/Typ/Bauzeit/Höhe rekonstruiert, keine Messung.</small>`)
       .addTo(map);
@@ -271,7 +277,7 @@ function initMap() {
     const l = window.LEIPZIG_LANDMARKS.find(x => x.id === id);
     if (l) showLandmark(l, false);
   });
-  ["leipzig-buildings-3d", "landmark-circles", "detail-buildings", "pois-layer", "stops-layer"].forEach(l => {
+  ["leipzig-buildings-3d", "landmark-circles", "detail-buildings", "building-parts", "pois-layer", "stops-layer"].forEach(l => {
     map.on("mouseenter", l, () => map.getCanvas().style.cursor = "pointer");
     map.on("mouseleave", l, () => map.getCanvas().style.cursor = "");
   });
@@ -314,9 +320,48 @@ function showLandmark(l, fly = true) {
       <tr><td>Architekt / Bau</td><td>${escapeHtml(l.architect)}</td></tr>
       <tr><td>Datenprüfung</td><td>Koordinate gegen OpenStreetMap-Objekt &amp; Objektartikel abgeglichen</td></tr>
     </table>
+    <div id="commons-photo"><p style="color:#aebadd">📷 Lade echtes Fassadenfoto (Wikimedia Commons) …</p></div>
     <p><a style="color:#ffd43b" target="_blank" rel="noopener" href="https://www.openstreetmap.org/#map=18/${l.lat}/${l.lon}">In OpenStreetMap öffnen ↗</a>
     · <a style="color:#ffd43b" target="_blank" rel="noopener" href="https://de.wikipedia.org/wiki/Spezial:Suche?search=${encodeURIComponent(l.name + " Leipzig")}">Wikipedia ↗</a></p>`;
   $("#info-card").classList.remove("hidden");
+  loadCommonsPhoto(l.name);
+}
+
+/* Echtes Fassadenfoto von Wikimedia Commons (freie Lizenz, mit Credit) */
+async function loadCommonsPhoto(name) {
+  const box = document.getElementById("commons-photo"); if (!box) return;
+  try {
+    const q = encodeURIComponent(name.replace(/[„""«»]/g, "") + " Leipzig");
+    const url = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${q}&gsrlimit=3&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=640&format=json&origin=*`;
+    const r = await fetch(url); const j = await r.json();
+    const pages = Object.values(j.query?.pages || {}).filter(p => p.imageinfo?.[0]?.thumburl);
+    if (!pages.length) { box.innerHTML = `<p style="color:#aebadd">📷 Kein Commons-Foto gefunden – <a style="color:#ffd43b" target="_blank" rel="noopener" href="https://commons.wikimedia.org/w/index.php?search=${q}">auf Commons suchen ↗</a></p>`; return; }
+    const ii = pages[0].imageinfo[0]; const meta = ii.extmetadata || {};
+    const artist = (meta.Artist?.value || "Wikimedia Commons").replace(/<[^>]*>/g, "").slice(0, 80);
+    const license = (meta.LicenseShortName?.value || "freie Lizenz").replace(/<[^>]*>/g, "");
+    box.innerHTML = `<a href="${ii.descriptionurl}" target="_blank" rel="noopener"><img src="${ii.thumburl}" alt="Foto: ${escapeHtml(name)}" style="width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.2)"></a>
+      <p style="font-size:11px;color:#aebadd;margin:5px 0 0">📷 Echtes Foto zur Fassaden-Kontrolle · ${escapeHtml(artist)} · ${escapeHtml(license)} · <a style="color:#ffd43b" href="${ii.descriptionurl}" target="_blank" rel="noopener">Wikimedia Commons ↗</a></p>`;
+    setCatalog("st-commons", "ok");
+  } catch (e) { box.innerHTML = `<p style="color:#aebadd">📷 Foto derzeit nicht ladbar (Netzwerk).</p>`; setCatalog("st-commons", "err"); }
+}
+
+/* Amtliche LoD2-Metadaten der Stadt Leipzig live aus dem CKAN-Portal */
+async function loadLeipzigLod2Meta() {
+  const box = $("#lod2-status");
+  box.innerHTML = "⏳ Lade offizielle Metadaten (Open Data Leipzig, CKAN-API) …";
+  try {
+    const r = await fetch("https://opendata.leipzig.de/api/3/action/package_show?id=3d-stadtmodell");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json(); const res = j.result?.resources || [];
+    const org = j.result?.organization?.title || "Stadt Leipzig";
+    box.innerHTML = `✓ <b>${escapeHtml(j.result?.title || "3D-Stadtmodell LoD2")}</b> · ${escapeHtml(org)} · Lizenz: ${escapeHtml(j.result?.license_title || "dl-de/by-2-0")}<br>` +
+      res.map(x => `• <a style="color:#ffd43b" target="_blank" rel="noopener" href="${x.url}">${escapeHtml(x.name || x.format || "Ressource")}</a> (${escapeHtml(x.format || "")})`).join("<br>") +
+      `<br><small>LoD2 ohne Texturen; für texturierte LoD3-Ansicht das städtische 3D-Stadtmodell nutzen. Download-Größe beachten – nicht im Browser streamen.</small>`;
+    setCatalog("st-ckan", "ok");
+  } catch (e) {
+    box.innerHTML = `<span style="color:#ff8787">Metadaten-Abruf fehlgeschlagen (${escapeHtml(e.message)}).</span> Direkt: <a style="color:#ffd43b" target="_blank" rel="noopener" href="https://opendata.leipzig.de/dataset/3d-stadtmodell">opendata.leipzig.de/dataset/3d-stadtmodell ↗</a>`;
+    setCatalog("st-ckan", "err");
+  }
 }
 
 function buildLandmarkList(filter = "") {
@@ -451,7 +496,7 @@ function parseYear(tags){
 function deriveFacade(tags, seed){
   const real = normalizeColor(tags["building:colour"] || tags["building:color"] || tags.colour || tags.color);
   if (real) return { color: real, source: "Echt: OSM building:colour" };
-  const material = String(tags["building:material"] || tags["facade:material"] || tags.material || "").toLowerCase();
+  const material = String(tags["building:material"] || tags["building:facade:material"] || tags["facade:material"] || tags["building:cladding"] || tags.material || "").toLowerCase();
   const matPalettes = {
     brick:["#94543f","#8a4c38","#a05a43","#7e4634"], sandstone:["#c8ad7d","#bfa36f","#d0b586"],
     stone:["#a89c87","#9d927e","#b0a48d"], limestone:["#cfc0a0"], marble:["#e6e1d5"],
@@ -462,7 +507,11 @@ function deriveFacade(tags, seed){
   };
   const matKey = Object.keys(matPalettes).find(k => material.includes(k));
   if (matKey) return { color: pickByHash(matPalettes[matKey], seed), source: "Material: " + material + " (OSM)" };
-  const type = String(tags.building || "yes").toLowerCase();
+  const type = String(tags.building || tags["building:part"] || "yes").toLowerCase();
+  const architecture = String(tags["building:architecture"] || tags.architecture || tags.historic || "").toLowerCase().replace(/_/g," ");
+  if (architecture.includes("timber") || architecture.includes("fachwerk")) return { color: pickByHash(["#e6dcc4","#ded0b2"], seed), source: "Architektur Fachwerk (OSM building:architecture)" };
+  if (architecture.includes("brick gothic") || architecture.includes("backsteingotik")) return { color: "#8a4c38", source: "Architektur Backsteingotik (OSM)" };
+  if (architecture.includes("baroque") || architecture.includes("rococo") || architecture.includes("neoclass") || architecture.includes("renaissance")) return { color: pickByHash(["#d8c49c","#e0cfa8","#cbb489"], seed), source: "Architektur historistisch/barock (OSM): Stuck/Sandstein" };
   const year = parseYear(tags);
   const levels = parseFloat(tags["building:levels"]) || null;
   let palette, why;
@@ -524,7 +573,9 @@ async function loadDetailBuildings() {
       baseColor, color: applyWeathering(baseColor, seed), facadeSource: facade.source,
       roofDisplayColor: roof.color, roofCap: roof.cap, roofSource: roof.source,
       roofColor: t["roof:colour"] || "", roofShape: t["roof:shape"] || "", levels: t["building:levels"] || "",
-      material: t["building:material"] || t.material || "", startDate: t.start_date || t.year_of_construction || "",
+      material: t["building:material"] || t["building:facade:material"] || t.material || "", startDate: t.start_date || t.year_of_construction || "",
+      architecture: t["building:architecture"] || "", heritage: t.heritage ? "Denkmalschutz (OSM heritage)" : "",
+      wikipedia: t.wikipedia || "", wikidata: t.wikidata || "", commons: t.wikimedia_commons || t.image || "",
       buildingType: t.building || "", street: t["addr:street"] || "", housenumber: t["addr:housenumber"] || "",
       postcode: t["addr:postcode"] || "", city: t["addr:city"] || "", osm: seed };
     if (el.type === "way" && el.geometry && el.geometry.length > 3) {
@@ -543,6 +594,36 @@ async function loadDetailBuildings() {
   map.getSource("detail-buildings-src").setData({ type: "FeatureCollection", features: feats });
   if ($("#chk-roofs").checked) layerVis(["detail-roofs"], true);
   return feats.length;
+}
+async function loadBuildingParts() {
+  const q = `[out:json][timeout:120];(way["building:part"](${CENTER_BBOX});relation["building:part"](${CENTER_BBOX}););out geom tags;`;
+  const els = await overpass(q, "Gebäudeteile");
+  const feats = [];
+  els.forEach(el => {
+    const t = el.tags || {}; const seed = el.type + "/" + el.id;
+    const facade = deriveFacade(t, seed);
+    const baseColor = varyColor(facade.color, seed);
+    const minH = parseFloat(String(t.min_height || "0").replace(",", ".")) || 0;
+    const props = { name: t.name || "", height: Math.max(parseHeight(t), minH + 2), minHeight: minH,
+      color: applyWeathering(baseColor, seed), baseColor, facadeSource: facade.source,
+      partType: t["building:part"] || "", roofShape: t["roof:shape"] || "", osm: seed };
+    const pushRing = ring => { if (ring[0].join() !== ring[ring.length-1].join()) ring.push(ring[0]);
+      feats.push({ type:"Feature", geometry:{ type:"Polygon", coordinates:[ring] }, properties: props }); };
+    if (el.type === "way" && el.geometry && el.geometry.length > 3) pushRing(el.geometry.map(g => [g.lon, g.lat]));
+    else if (el.type === "relation" && el.members) {
+      stitchRings(el.members.filter(m => m.type === "way" && (m.role === "outer" || m.role === "") && m.geometry)
+        .map(m => m.geometry.map(g => [g.lon, g.lat]))).forEach(pushRing);
+    }
+  });
+  map.getSource("building-parts-src").setData({ type: "FeatureCollection", features: feats });
+  return feats.length;
+}
+function facadeCoverageStats() {
+  if (!detailFeatures.length) return "";
+  const n = detailFeatures.length;
+  const pct = pred => Math.round(detailFeatures.filter(pred).length / n * 100);
+  return ` Fassaden-Abdeckung im Zentrum: <b>${pct(f => f.properties.facadeSource.startsWith("Echt"))} %</b> echte OSM-Farbe, ` +
+    `${pct(f => f.properties.facadeSource.startsWith("Material"))} % über Material, ${pct(f => f.properties.roofSource.startsWith("Echt"))} % echte Dachfarbe – Rest typologisch rekonstruiert (Herkunft je Gebäude im Klick).`;
 }
 async function loadTransportAndMore() {
   const results = {};
@@ -602,7 +683,9 @@ async function loadAllData() {
   try {
     const nB = await loadDetailBuildings();
     $("#chk-detail-buildings").checked = true; layerVis(["detail-buildings"], true);
-    st.innerHTML = `✓ Detail-Gebäude geladen: <b>${nB.toLocaleString("de-DE")}</b> echte Grundrisse mit Fassaden-/Dachangaben. Lade jetzt Bäume, Verkehr, POIs, Grenzen …`;
+    let nParts = 0;
+    try { nParts = await loadBuildingParts(); layerVis(["building-parts"], true); const cp = $("#chk-parts"); if (cp) cp.checked = true; } catch(e) { console.warn("Gebäudeteile:", e); }
+    st.innerHTML = `✓ Detail-Gebäude geladen: <b>${nB.toLocaleString("de-DE")}</b> Grundrisse + <b>${nParts}</b> Gebäudeteile (Türme/Anbauten).${facadeCoverageStats()} Lade jetzt Bäume, Verkehr, POIs, Grenzen …`;
     await loadTrees();
     const r = await loadTransportAndMore();
     ["rail","stops","cycleways","pois","boundaries","water"].forEach(k => { const c = $("#chk-" + k); if (c) c.checked = true; });
@@ -765,6 +848,7 @@ $("#sun").oninput = e => applySun(parseFloat(e.target.value));
 $("#minzoom").oninput = e => { $("#zoom-label").textContent = e.target.value; ["leipzig-buildings-3d","leipzig-roofs"].forEach(l => { if (map.getLayer(l)) map.setLayerZoomRange(l, parseFloat(e.target.value), 24); }); };
 $("#landmark-filter").oninput = e => buildLandmarkList(e.target.value);
 $("#btn-trees-load").onclick = loadTrees;
+$("#btn-lod2-meta").onclick = loadLeipzigLod2Meta;
 $("#btn-load-all").onclick = loadAllData;
 $("#btn-realtime").onclick = loadRealtime;
 $("#btn-livesun").onclick = () => {
@@ -773,7 +857,7 @@ $("#btn-livesun").onclick = () => {
   $("#sun").value = h; applySun(h);
   $("#realtime-status").textContent = "Sonnenstand auf aktuelle Leipziger Zeit gesetzt (" + $("#sun-label").textContent + ").";
 };
-const toggleMap = { "chk-detail-buildings": ["detail-buildings", "detail-roofs"], "chk-rail": ["rail-layer"], "chk-stops": ["stops-layer", "stops-labels"],
+const toggleMap = { "chk-detail-buildings": ["detail-buildings", "detail-roofs"], "chk-parts": ["building-parts"], "chk-rail": ["rail-layer"], "chk-stops": ["stops-layer", "stops-labels"],
   "chk-cycleways": ["cycle-layer"], "chk-pois": ["pois-layer", "pois-labels"], "chk-boundaries": ["bounds-layer", "bounds-labels"], "chk-water": ["water-layer"] };
 Object.entries(toggleMap).forEach(([id, layers]) => {
   const el = document.getElementById(id); if (!el) return;

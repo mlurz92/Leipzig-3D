@@ -71,6 +71,7 @@
   <section>
     <h2>Alle Datenebenen <small>(OSM-Rohdaten live)</small></h2>
     <button id="btn-load-all" class="wide-accent">⬇ Alle Detaildaten im Zentrum laden</button>
+    <label class="row"><span>🏛️ Gebäudeteile (Simple 3D Buildings)</span><input type="checkbox" id="chk-parts"></label>
     <label class="row"><span>🚊 Bahn / Tram-Linien</span><input type="checkbox" id="chk-rail"></label>
     <label class="row"><span>🚏 ÖPNV-Haltestellen</span><input type="checkbox" id="chk-stops"></label>
     <label class="row"><span>🚲 Radwege</span><input type="checkbox" id="chk-cycleways"></label>
@@ -102,6 +103,9 @@
       <li><span id="st-nominatim">●</span> Adresssuche (Nominatim)</li>
       <li><span id="st-weather">●</span> Wetter &amp; Luftqualität (Open-Meteo/CAMS)</li>
       <li><span id="st-pegel">●</span> Wasserpegel (Pegelonline, WSV)</li>
+      <li><span id="st-parts">●</span> Gebäudeteile Simple 3D Buildings (OSM)</li>
+      <li><span id="st-commons">●</span> Fassadenfotos (Wikimedia Commons)</li>
+      <li><span id="st-ckan">●</span> Amtl. LoD2-Metadaten (Open Data Leipzig / CKAN)</li>
     </ul>
     <small class="status">Grün = Quelle in dieser Sitzung erfolgreich geladen · Gelb = eingebunden, noch nicht genutzt · Rot = Fehler (Details im Kontrollbericht).</small>
   </section>
@@ -115,6 +119,23 @@
     <h2>Wahrzeichen <small>(exakte WGS84-Koordinaten)</small></h2>
     <div class="filter"><input id="landmark-filter" placeholder="Wahrzeichen filtern …"></div>
     <div id="landmarks"></div>
+  </section>
+
+  <section>
+    <h2>Weitere Quellen <small>(Recherche: Fassaden &amp; Gebäude)</small></h2>
+    <button id="btn-lod2-meta" class="wide-accent">🏛 Amtliches LoD2 Leipzig – Metadaten live laden</button>
+    <div id="lod2-status" class="status">Stadt Leipzig: ca. 154.000 LoD2-Gebäude (CityGML/Shape/DXF, dl-de/by-2-0) + 10 texturierte LoD3-Markantbauten im städtischen Modell. Der Download liefert LoD2 <b>ohne Texturen</b> – Button lädt die offiziellen Metadaten/Ressourcen live aus dem Open-Data-Portal.</div>
+    <ul class="facts">
+      <li><b>Stadt Leipzig LoD2 (amtlich):</b> <a target="_blank" rel="noopener" href="https://opendata.leipzig.de/dataset/3d-stadtmodell">Open-Data-Datensatz</a> · <a target="_blank" rel="noopener" href="https://geodaten.leipzig.de/open_data/organisationseinheit/Amt_fuer_Geoinformation_und_Bodenordnung/3d/LoD2/GEB3D_Leipzig_LoD2_CityGML.zip">CityGML-ZIP</a> · <a target="_blank" rel="noopener" href="https://www.leipzig.de/bauen-und-wohnen/bauen/geodaten-und-karten/3d-stadtmodell">3D-Stadtmodell Leipzig (LoD3-Texturen)</a></li>
+      <li><b>GeoSN Sachsen LoD1/LoD2:</b> 2×2-km-Kacheln CityGML/3D-Shape, kostenfrei: <a target="_blank" rel="noopener" href="https://www.geodaten.sachsen.de/downloadbereich-digitale-3d-stadtmodelle-4875.html">Downloadbereich</a></li>
+      <li><b>GeoSN DOM1/DGM1/Laserscan:</b> 1-m-Oberflächenmodell zur echten Dach-/Höhenableitung: <a target="_blank" rel="noopener" href="https://www.geodaten.sachsen.de/downloadbereich-digitale-hoehenmodelle-4851.html">Höhenmodelle</a> · ALKIS-Hausumringe: <a target="_blank" rel="noopener" href="https://www.geodaten.sachsen.de/liegenschaftskataster-3990.html">Liegenschaftskataster/WFS</a></li>
+      <li><b>Overture Maps Buildings:</b> führt u. a. <code>facade_color</code>, <code>facade_material</code>, <code>roof_shape/color</code>, Höhe, Geschosse – GeoParquet via AWS/DuckDB: <a target="_blank" rel="noopener" href="https://docs.overturemaps.org/getting-data/duckdb/">Datenzugang</a> (SQL-Vorlage im Repo: <code>scripts/</code>)</li>
+      <li><b>EUBUCCO:</b> 322 Mio. europäische Gebäude mit Höhe, Geschossen, Typ, Baujahr + Unsicherheit: <a target="_blank" rel="noopener" href="https://eubucco.com/">eubucco.com</a> – zum Anreichern per Gebäude-ID/Geometrie (Offline-Merge).</li>
+      <li><b>Microsoft GlobalML Footprints:</b> Grundrisse + Höhen-Schätzungen (Westeuropa): <a target="_blank" rel="noopener" href="https://github.com/microsoft/GlobalMLBuildingFootprints">GitHub</a></li>
+      <li><b>Copernicus GHSL/Urban Atlas:</b> Gebäudehöhen-Raster (100 m bzw. 10 m) zur Plausibilisierung: <a target="_blank" rel="noopener" href="https://human-settlement.emergency.copernicus.eu/datasets.php">GHSL</a> · <a target="_blank" rel="noopener" href="https://land.copernicus.eu/en/products/urban-atlas">Urban Atlas</a></li>
+      <li><b>Fassaden-Referenzfotos:</b> Wikimedia Commons (automatisch bei Wahrzeichen, unten im Info-Fenster) · Straßenfotos zur Verifikation: <a target="_blank" rel="noopener" href="https://www.mapillary.com/app/">Mapillary (CC BY-SA, API nur mit Token)</a></li>
+      <li><b>CC0-Materialtexturen</b> (für texturierte Offline-Renderings, z. B. CityGML→Blender): <a target="_blank" rel="noopener" href="https://ambientcg.com/">ambientCG</a> · <a target="_blank" rel="noopener" href="https://polyhaven.com/textures">Poly Haven</a> – MapLibre-Extrusionen selbst sind nicht texturierbar, daher hier Farb-/Materialrekonstruktion.</li>
+    </ul>
   </section>
 
   <section>
