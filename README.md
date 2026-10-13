@@ -23,8 +23,15 @@ python3 -m http.server 5173
 | Oberflächen (Satellit) | Esri World Imagery (Echtbild-Luftbilder) | Umschaltbar: Stadtkarte / Satellit / Hybrid |
 | Straßen, Gewässer (Pleiße, Weiße Elster, Karl-Heine-Kanal …), Parks | OSM (Basis-Layer des Kartenstils) | Täglich aktualisierte Community-Daten |
 | Einzelbäume | OSM `natural=tree`, live per Overpass API | Nur einzeln erfasste Bäume (Button im Panel) |
-| Wahrzeichen (20) | Handverifizierte WGS84-Koordinaten, Höhen & Baudaten (`js/landmarks.js`) | Gegen OSM-Objekte und Objektartikel abgeglichen |
+| Wahrzeichen (38) | Handverifizierte WGS84-Koordinaten, Höhen & Baudaten (`js/landmarks.js`) | Gegen OSM-Objekte und Objektartikel abgeglichen |
 | Suche | Nominatim (OSM), auf Leipzigs Bounding Box begrenzt | Adressgenau wie OSM |
+| Amtl. Luftbild | GeoSN Sachsen, WMS DOP-RGB (dl-de/by-2-0) | Amtliches Orthofoto, in Sachsen i. d. R. 20-cm-Bodenauflösung |
+| Detail-Gebäude Zentrum | OSM-Rohdaten live via Overpass (`out geom`): Grundriss, `height`/`levels`, `building:colour`, `roof:shape/colour`, Adresse | Rohdaten-genau; Relations-Multipolygone werden im Browser zusammengesetzt |
+| Bahn/Tram, ÖPNV, Radwege, POIs, Stadtteilgrenzen, Gewässer-Verläufe | OSM-Rohdaten live via Overpass | Wie in OSM erfasst; Grenzen als Linien + Schwerpunkt-Labels |
+| Bäume 3D | OSM `natural=tree` via Overpass, Kronen als 3D-Extrusion | Standort echt; Kronengröße/Höhe typisiert (OSM erfasst sie selten) |
+| Wetter & Sonne | Open-Meteo (DWD ICON), Auf-/Untergang, Live-Uhrzeit | Echtzeit |
+| Luftqualität | Open-Meteo Air Quality (CAMS): EU-AQI, PM2.5/PM10, O₃, NO₂ | Echtzeit, modellierte Werte |
+| Wasserpegel | Pegelonline (WSV), nächste Station zu Leipzig inkl. aktuellem Messwert | Echtzeit, amtlich |
 
 ## Kontrolle der Ergebnisse
 
@@ -49,11 +56,14 @@ Oberflächen-Referenz und markiert Schätzungen transparent.
 
 ## Funktionen
 
-- 3D-Gebäude mit Höhen-Farbskala oder Fassadenmodus, Sonnenstands-Simulation (6–20 Uhr)
-- Satellit / Stadtkarte / Hybrid, Gelände-Relief mit Überhöhung, Labels ein/aus
-- 20 Wahrzeichen + 9 Stadtgebiete mit Kameraflügen, automatischer Stadtrundflug
-- Gebäude-Klick: Höhe, OSM-ID, Koordinate · Adresssuche · Einzelbäume laden
-- HUD mit Koordinate, Zoom und Gebäudezähler · mobil nutzbar
+- 3D-Gebäude mit Höhen-Farbskala oder Fassadenmodus, Sonnenstands-Simulation (6–20 Uhr) oder Live-Sonne
+- Stadtkarte / Satellit / **amtliches GeoSN-Orthofoto** / Hybrid mit Deckkraft-Regler, Gelände-Relief, Labels ein/aus
+- **„Alle Detaildaten laden"**: Gebäude-Rohdaten, 3D-Bäume, Bahn/Tram, Haltestellen, Radwege, POIs, Grenzen, Gewässer
+- **Echtzeit-Panel**: Wetter, Sonnenzeiten, Luftqualität, Wasserpegel + Datenkatalog mit Live-Status je Quelle
+- 38 Wahrzeichen + 9 Stadtgebiete mit Kameraflügen, automatischer Stadtrundflug
+- Gebäude-Klick (Basis + Detail mit Adresse/Dachform), POI-/Haltestellen-Klick, Adresssuche
+- Export: PNG-Screenshot der Szene, Gebäude des Bildausschnitts als GeoJSON
+- HUD mit Koordinate, Geländehöhe am Cursor, Zoom und Gebäudezähler · mobil nutzbar
 
 ## Datenlizenzen
 

@@ -35,13 +35,16 @@
     <div class="btn-row">
       <button data-basemap="karte" class="active">Stadtkarte</button>
       <button data-basemap="satellit">Satellit (Echtbild)</button>
+      <button data-basemap="geosn">Amtl. Luftbild GeoSN</button>
       <button data-basemap="hybrid">Hybrid</button>
     </div>
+    <label>Luftbild-Deckkraft <b id="satop-label">100 %</b><input type="range" id="sat-opacity" min="0.3" max="1" step="0.05" value="1"></label>
     <label class="row"><span>3D-Gebäude (OSM-Höhen)</span><input type="checkbox" id="chk-buildings" checked></label>
+    <label class="row"><span>Detail-Gebäude Zentrum (Rohdaten, Dach/Fassade)</span><input type="checkbox" id="chk-detail-buildings"></label>
     <label class="row"><span>Gelände (Relief)</span><input type="checkbox" id="chk-terrain"></label>
     <label class="row"><span>Wahrzeichen markieren</span><input type="checkbox" id="chk-landmarks" checked></label>
     <label class="row"><span>Straßennamen &amp; Labels</span><input type="checkbox" id="chk-labels" checked></label>
-    <label class="row"><span>Bäume – Echtdaten (OSM)</span><input type="checkbox" id="chk-trees"></label>
+    <label class="row"><span>Bäume 3D – Echtdaten (OSM)</span><input type="checkbox" id="chk-trees"></label>
     <label>Farbmodus
       <select id="sel-colormode">
         <option value="fassade">Fassade (OSM-Farbe / Material-Annäherung)</option>
@@ -52,6 +55,44 @@
     <label>Sonnenstand <b id="sun-label">14:00 Uhr</b><input type="range" id="sun" min="6" max="20" step="0.25" value="14"></label>
     <label>Gelände-Überhöhung <b id="terr-label">1,0×</b><input type="range" id="terr-ex" min="0" max="2" step="0.1" value="1"></label>
     <label>Gebäude-Details ab Zoom <b id="zoom-label">14</b><input type="range" id="minzoom" min="12" max="16" step="0.5" value="14"></label>
+  </section>
+
+  <section>
+    <h2>Alle Datenebenen <small>(OSM-Rohdaten live)</small></h2>
+    <button id="btn-load-all" class="wide-accent">⬇ Alle Detaildaten im Zentrum laden</button>
+    <label class="row"><span>🚊 Bahn / Tram-Linien</span><input type="checkbox" id="chk-rail"></label>
+    <label class="row"><span>🚏 ÖPNV-Haltestellen</span><input type="checkbox" id="chk-stops"></label>
+    <label class="row"><span>🚲 Radwege</span><input type="checkbox" id="chk-cycleways"></label>
+    <label class="row"><span>📍 POIs (Kultur, Gastro, Bildung …)</span><input type="checkbox" id="chk-pois"></label>
+    <label class="row"><span>🗺️ Stadtteil-Grenzen</span><input type="checkbox" id="chk-boundaries"></label>
+    <label class="row"><span>🌊 Gewässer-Details (Verläufe)</span><input type="checkbox" id="chk-water"></label>
+    <div id="datalayer-status" class="status">Noch keine Detaildaten geladen. Ein Klick lädt Gebäude-Rohdaten, Bäume, Bahn/Tram, Haltestellen, Radwege, POIs, Grenzen und Gewässer fürs Zentrum (ca. 51.325–51.355° N).</div>
+    <div class="btn-row">
+      <button id="btn-screenshot">📷 PNG-Export</button>
+      <button id="btn-export-geojson">⬇ Gebäude-GeoJSON</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Echtzeit Leipzig</h2>
+    <div id="realtime" class="rt-grid"><div class="rt-card">Lade Wetter, Luftqualität, Wasserpegel &amp; Sonne …</div></div>
+    <div class="btn-row"><button id="btn-realtime">↻ Echtzeit aktualisieren</button><button id="btn-livesun">☀ Live-Sonne übernehmen</button></div>
+    <div id="realtime-status" class="status"></div>
+  </section>
+
+  <section>
+    <h2>Datenkatalog &amp; Status</h2>
+    <ul id="catalog" class="catalog">
+      <li><span id="st-vector">●</span> OSM Vektor-Karte/Gebäude (OpenFreeMap)</li>
+      <li><span id="st-esri">●</span> Satellit Esri World Imagery</li>
+      <li><span id="st-geosn">●</span> Amtl. Orthofoto GeoSN Sachsen (WMS DOP)</li>
+      <li><span id="st-dem">●</span> Gelände-DEM (Terrarium/SRTM)</li>
+      <li><span id="st-overpass">●</span> OSM-Rohdaten (Overpass API)</li>
+      <li><span id="st-nominatim">●</span> Adresssuche (Nominatim)</li>
+      <li><span id="st-weather">●</span> Wetter &amp; Luftqualität (Open-Meteo/CAMS)</li>
+      <li><span id="st-pegel">●</span> Wasserpegel (Pegelonline, WSV)</li>
+    </ul>
+    <small class="status">Grün = Quelle in dieser Sitzung erfolgreich geladen · Gelb = eingebunden, noch nicht genutzt · Rot = Fehler (Details im Kontrollbericht).</small>
   </section>
 
   <section>
@@ -93,7 +134,7 @@
 </div>
 
 <div id="hud">
-  <span id="hud-coords">51.3397° N, 12.3731° O</span><span id="hud-zoom">Zoom 15.2</span><span id="hud-buildings">Gebäude im Bild: –</span>
+  <span id="hud-coords">51.3397° N, 12.3731° O</span><span id="hud-elev">Höhe Gelände: –</span><span id="hud-zoom">Zoom 15.2</span><span id="hud-buildings">Gebäude im Bild: –</span>
 </div>
 
 <div class="attrib-note">Modell: OpenStreetMap-Echtdaten · Keine amtliche Vermessung – für amtliche LoD2-Daten siehe GeoSN Sachsen (README)</div>
